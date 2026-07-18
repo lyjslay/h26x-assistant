@@ -25,18 +25,38 @@ def _first(mb: Dict, name: str, default=None):
     return v[0] if v else default
 
 
-def _slice_qp_of(frame: Dict) -> int:
-    """由 PPS pic_init_qp_minus26 + SliceHeader slice_qp_delta 推 sliceQP。"""
-    pic_init = None
+def _slice_qp_of(frame: Dict, pic_init_qp: int) -> int:
+    """SliceQP = 26 + pic_init_qp_minus26 + slice_qp_delta (H.264 7.4.3)。
+
+    注意：PPS(含 pic_init_qp_minus26)通常只在 IDR 帧携带，之后的 P/B 帧
+    不重复传，故 pic_init_qp 必须由**流级 PPS 状态**提供，不能只在当前帧的
+    NAL 里找(否则 P/B 帧退化为 0，导致 SliceQP 系统性偏低)。
+    """
     slice_delta = None
     for n in frame.get("nals", []):
         for f in n.get("fields", []):
             nm = f.get("name_en") or f.get("name")
-            if nm == "pic_init_qp_minus26" and pic_init is None:
-                pic_init = f.get("value")
             if nm == "slice_qp_delta" and slice_delta is None:
                 slice_delta = f.get("value")
-    return 26 + (pic_init or 0) + (slice_delta or 0)
+    return 26 + (pic_init_qp or 0) + (slice_delta or 0)
+
+
+def _active_pic_init_qp(project_id: str, decode_index: int, cfg=None) -> int:
+    """取到解码序 decode_index 为止、最近一次 PPS 的 pic_init_qp_minus26。
+
+    多 PPS 场景下应按 slice 引用的 pic_parameter_set_id 精确匹配；此处采用
+    "最近出现的 PPS" 近似(绝大多数码流单 PPS 或 PPS 值相同)。
+    """
+    parsed = syntax._ensure_parsed(project_id, cfg=cfg)  # noqa: SLF001
+    frames = parsed["frames"]
+    last = 0
+    for i in range(0, min(decode_index, len(frames) - 1) + 1):
+        for n in frames[i].get("nals", []):
+            if n.get("nal_unit_type") == 8:  # PPS
+                for f in n.get("fields", []):
+                    if (f.get("name_en") or f.get("name")) == "pic_init_qp_minus26":
+                        last = f.get("value") or 0
+    return last
 
 
 def _ref_lists(frame: Dict) -> Dict[str, List[int]]:
@@ -57,7 +77,8 @@ def build_frame_overlay(project_id: str, decode_index: int, cfg=None) -> Dict[st
     mbw = (width + 15) // 16
 
     fs = syntax.frame_syntax(project_id, decode_index, cfg=cfg)
-    slice_qp = _slice_qp_of(fs)
+    pic_init_qp = _active_pic_init_qp(project_id, decode_index, cfg=cfg)
+    slice_qp = _slice_qp_of(fs, pic_init_qp)
 
     blocks: List[Dict] = []
     cur_qp = slice_qp
