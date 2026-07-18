@@ -118,8 +118,13 @@ class Project:
         )
 
 
-def create_project(input_path: str, cfg: Optional[Dict[str, str]] = None) -> Dict[str, object]:
-    """建立工程：探测 codec，必要时解封装为 Annex-B，写 project.json。"""
+def create_project(input_path: str, cfg: Optional[Dict[str, str]] = None,
+                   original_name: Optional[str] = None) -> Dict[str, object]:
+    """建立工程：探测 codec，必要时解封装为 Annex-B，写 project.json。
+
+    original_name: 上传场景下的原始文件名(input_path 可能是临时文件)，
+                   用于展示，避免暴露临时路径。
+    """
     if cfg is None:
         cfg = config.load_config()
     ffprobe = cfg.get("ffprobe", "")
@@ -141,7 +146,9 @@ def create_project(input_path: str, cfg: Optional[Dict[str, str]] = None) -> Dic
     ext = "264" if codec == "h264" else "265"
     es_path = proj.dir / ("stream.%s" % ext)
 
-    is_raw = _is_annexb_raw(input_path, codec)
+    # 判定裸流/封装：上传场景临时文件无正确后缀，优先用原始文件名的扩展名
+    name_for_ext = original_name or input_path
+    is_raw = _is_annexb_raw(name_for_ext, codec)
     if is_raw:
         # 裸流：直接拷贝进工程目录(保持可迁移，不依赖原始路径)
         shutil.copy2(input_path, es_path)
@@ -153,7 +160,7 @@ def create_project(input_path: str, cfg: Optional[Dict[str, str]] = None) -> Dic
     meta = {
         "id": pid,
         "input_path": os.path.abspath(input_path),
-        "input_name": os.path.basename(input_path),
+        "input_name": original_name or os.path.basename(input_path),
         "source_kind": source_kind,
         "elementary_stream": es_path.name,
         "elementary_bytes": os.path.getsize(es_path),

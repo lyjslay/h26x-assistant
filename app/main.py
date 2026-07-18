@@ -1,9 +1,11 @@
 """FastAPI 应用入口 —— P1：配置 / 工程 / 码率 三组 REST 接口 + 静态前端。"""
 import os
+import shutil
+import uuid
 from pathlib import Path
 from typing import Dict, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -52,6 +54,7 @@ class ProjectBody(BaseModel):
 
 @app.post("/api/project")
 def api_create_project(body: ProjectBody):
+    """按服务器本机绝对路径建立工程(高级/大文件免拷贝场景)。"""
     try:
         meta = project.create_project(body.input_path)
         return {"project": meta}
@@ -59,6 +62,32 @@ def api_create_project(body: ProjectBody):
         raise HTTPException(status_code=400, detail=str(e))
     except (RuntimeError, OSError) as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/project/upload")
+async def api_upload_project(file: UploadFile = File(...)):
+    """浏览器上传本机文件建立工程(默认方式，流式落盘避免占内存)。"""
+    if not file.filename:
+        raise HTTPException(status_code=400, detail="未选择文件")
+    tmp_dir = project.WORKDIR / ".uploads" / uuid.uuid4().hex[:8]
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+    safe_name = os.path.basename(file.filename)
+    tmp_path = tmp_dir / safe_name
+    try:
+        with open(tmp_path, "wb") as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                out.write(chunk)
+        meta = project.create_project(str(tmp_path), original_name=safe_name)
+        return {"project": meta}
+    except (ValueError,) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except (RuntimeError, OSError) as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        shutil.rmtree(tmp_dir, ignore_errors=True)
 
 
 @app.get("/api/projects")

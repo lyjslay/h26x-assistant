@@ -33,11 +33,20 @@
     <h2>输入文件</h2>
     <p class="hint">支持裸码流(.264/.h264/.265/.hevc/.bin)或封装视频(.mp4/.mkv/.ts/.flv…，将自动解封装为 Annex-B)。</p>
     <div class="row">
-      <input type="text" id="inputPath" placeholder="输入文件绝对路径，例如 /media/cvitek/yijun.liu01/jmhm/res/4321.mp4" />
-      <button id="btnCreateProj" class="primary">加载 / 分析</button>
+      <button id="btnPickFile" class="primary">📁 选择本机文件…</button>
+      <span id="pickedName" class="picked"></span>
+      <input type="file" id="fileInput" accept=".264,.h264,.avc,.265,.h265,.hevc,.bin,.mp4,.mkv,.ts,.flv,.mov,.m4v,video/*" hidden />
     </div>
     <div class="row">
-      <button id="btnUseSample" class="link">使用样本 res/4321.mp4</button>
+      <a href="#" id="toggleAdvanced" class="link">▸ 高级：使用服务器本机路径(大文件免上传)</a>
+    </div>
+    <div class="row advanced" id="advancedBox" hidden>
+      <input type="text" id="inputPath" placeholder="服务器本机绝对路径，例如 /media/cvitek/yijun.liu01/jmhm/res/4321.mp4" />
+      <button id="btnCreateProj">按路径加载</button>
+    </div>
+    <div id="uploadProgress" class="upload-progress" hidden>
+      <div class="bar"><span id="uploadBar"></span></div>
+      <span id="uploadPct"></span>
     </div>
     <div id="projInfo" class="proj-info"></div>
     <div id="setupMsg" class="msg"></div>

@@ -86,4 +86,17 @@ button.link { background: none; border: none; color: #6ea8fe; padding: 4px; }
   background: #05070d; border: 1px solid #3b82f6; border-radius: 6px;
   padding: 6px 9px; font-size: 12px; color: #e8edf7; white-space: nowrap; z-index: 5;
 }
+.picked { color: #7ee787; font-size: 13px; font-family: monospace; }
+.advanced input { min-width: 360px; }
+.upload-progress { display: flex; align-items: center; gap: 10px; margin: 8px 0; }
+.upload-progress .bar {
+  flex: 1; max-width: 420px; height: 10px; background: #1b2238;
+  border-radius: 6px; overflow: hidden; border: 1px solid #2b3550;
+}
+.upload-progress .bar span {
+  display: block; height: 100%; width: 0%; background: #3b82f6;
+  transition: width .15s ease;
+}
+.upload-progress #uploadPct { font-size: 12px; color: #9aa7c0; font-family: monospace; }
+
 .placeholder { padding: 60px; text-align: center; color: #55617d; font-size: 16px; }

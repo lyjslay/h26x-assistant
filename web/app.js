@@ -97,19 +97,59 @@
   }
 
   /* ---------- 工程 ---------- */
-  async function createProject() {
+  function onProjectCreated(proj) {
+    state.project = proj; state.bitrate = null;
+    renderProjInfo();
+    setMsg("#setupMsg", "工程已建立，切到「② 码率分析」查看曲线", "ok");
+    enableTab("bitrate");
+  }
+
+  // 浏览器上传本机文件(默认方式)，带进度条
+  function uploadFile(file) {
+    setMsg("#setupMsg", "", "");
+    const fd = new FormData();
+    fd.append("file", file, file.name);
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/project/upload");
+    const box = $("#uploadProgress"), bar = $("#uploadBar"), pct = $("#uploadPct");
+    box.hidden = false; bar.style.width = "0%"; pct.textContent = "";
+
+    xhr.upload.onprogress = function (e) {
+      if (e.lengthComputable) {
+        const p = Math.round(e.loaded / e.total * 100);
+        bar.style.width = p + "%";
+        pct.textContent = p + "%  (" + (e.loaded / 1048576).toFixed(1) + "/" +
+          (e.total / 1048576).toFixed(1) + " MB)";
+      }
+    };
+    xhr.upload.onload = function () {
+      bar.style.width = "100%"; pct.textContent = "上传完成，解析中…（封装文件将自动解封装）";
+    };
+    xhr.onload = function () {
+      box.hidden = true;
+      let data = {};
+      try { data = JSON.parse(xhr.responseText); } catch (e) {}
+      if (xhr.status >= 200 && xhr.status < 300 && data.project) {
+        onProjectCreated(data.project);
+      } else {
+        setMsg("#setupMsg", "失败: " + (data.detail || ("HTTP " + xhr.status)), "err");
+      }
+    };
+    xhr.onerror = function () { box.hidden = true; setMsg("#setupMsg", "上传失败：网络错误", "err"); };
+    xhr.send(fd);
+  }
+
+  // 高级：按服务器本机路径建立工程
+  async function createProjectByPath() {
     const path = $("#inputPath").value.trim();
-    if (!path) { setMsg("#setupMsg", "请填写输入文件路径", "err"); return; }
+    if (!path) { setMsg("#setupMsg", "请填写服务器本机路径", "err"); return; }
     setMsg("#setupMsg", "解析中…（封装文件将自动解封装，稍候）", "");
     try {
       const d = await api("/api/project", {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ input_path: path }),
       });
-      state.project = d.project; state.bitrate = null;
-      renderProjInfo();
-      setMsg("#setupMsg", "工程已建立，切到「② 码率分析」查看曲线", "ok");
-      enableTab("bitrate");
+      onProjectCreated(d.project);
     } catch (e) { setMsg("#setupMsg", "失败: " + e.message, "err"); }
   }
 
@@ -246,10 +286,26 @@
     loadConfig();
     $("#btnSaveCfg").addEventListener("click", saveConfig);
     $("#btnVerify").addEventListener("click", verifyConfig);
-    $("#btnCreateProj").addEventListener("click", createProject);
-    $("#btnUseSample").addEventListener("click", function () {
-      $("#inputPath").value = "/media/cvitek/yijun.liu01/jmhm/res/4321.mp4";
+
+    // 选择本机文件(默认，上传)
+    $("#btnPickFile").addEventListener("click", function () { $("#fileInput").click(); });
+    $("#fileInput").addEventListener("change", function () {
+      const f = this.files && this.files[0];
+      if (!f) return;
+      $("#pickedName").textContent = f.name + "  (" + (f.size / 1048576).toFixed(1) + " MB)";
+      uploadFile(f);
+      this.value = "";  // 允许再次选同一文件
     });
+
+    // 高级：服务器路径
+    $("#toggleAdvanced").addEventListener("click", function (e) {
+      e.preventDefault();
+      const box = $("#advancedBox");
+      box.hidden = !box.hidden;
+      this.textContent = (box.hidden ? "▸" : "▾") +
+        " 高级：使用服务器本机路径(大文件免上传)";
+    });
+    $("#btnCreateProj").addEventListener("click", createProjectByPath);
     $("#btnReloadBr").addEventListener("click", function () { state.bitrate = null; loadBitrate(); });
     document.querySelectorAll('input[name="brmode"]').forEach(r =>
       r.addEventListener("change", drawBitrate));

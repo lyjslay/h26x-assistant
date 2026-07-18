@@ -139,9 +139,10 @@ HOST=0.0.0.0 ./run.sh 8000
    - 打开后四个工具路径会自动探测：**绿灯 = 可用，红灯 = 不可用**（悬停看版本/错误）。
      只有 FFmpeg 是 P1 必需，JM/HM 可后续再配。
    - 修改路径后点「保存并校验」，配置持久化到 `~/.streamtool/config.json`。
-   - 在输入框填入**文件绝对路径**，点「加载 / 分析」。
+   - 点「📁 选择本机文件…」按钮，从本机选择要分析的视频/码流文件（默认方式，浏览器上传，带进度条）。
      - 裸码流（`.264/.h264/.avc/.265/.h265/.hevc/.bin`）直接载入；
      - 封装文件（`.mp4/.mkv/.ts/.flv…`）自动用 FFmpeg 解封装为 Annex-B。
+   - 大文件若不想上传：展开「▸ 高级」，直接填**服务器本机绝对路径**加载（免拷贝，适合工具与文件同机）。
    - 下方显示识别到的编码 / 分辨率 / 帧率 / Profile 等。
 
 2. **② 码率分析**
@@ -178,7 +179,8 @@ HOST=0.0.0.0 ./run.sh 8000
 | GET  | `/api/config` | 读取配置 + 校验状态 |
 | POST | `/api/config` | 保存配置（JSON: `ffmpeg`/`ffprobe`/`jm_ldecod`/`hm_analyser`） |
 | POST | `/api/config/verify` | 重新校验各工具 |
-| POST | `/api/project` | 建立工程（JSON: `input_path`），返回 codec/分辨率/帧率等 |
+| POST | `/api/project/upload` | 上传本机文件建立工程（multipart: `file`），默认方式 |
+| POST | `/api/project` | 按服务器本机路径建立工程（JSON: `input_path`），大文件免拷贝 |
 | GET  | `/api/projects` | 列出所有工程 |
 | GET  | `/api/project/{id}` | 工程详情 |
 | GET  | `/api/project/{id}/bitrate` | 码率分析（逐帧/逐秒/GOP + 波动汇总） |
