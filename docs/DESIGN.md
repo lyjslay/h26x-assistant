@@ -33,7 +33,7 @@
 |---|---|---|---|
 | P1 | 需求1 路径配置+解封装 · 需求2 码率曲线(逐帧/逐秒/GOP) | ffprobe | ✅ 已完成 |
 | P2 | 需求3 H.264 逐帧逐宏块语法解析(JM trace→JSON)+中英文字典 | JM stock | ✅ 已完成 |
-| P3 | 需求4 帧预览+**子块级**分割/QP/MV/参考关系叠加 | ffmpeg 出帧 + P2 数据 | 中 |
+| P3 | 需求4 帧预览+**子块级**分割/QP/MV/参考关系叠加 | ffmpeg 出帧 + P2 数据 | ✅ 已完成 |
 | P4 | 需求5 原始数据分段 + hex↔预览双向高亮联动 | P2 的 bit offset | 中(CABAC 字节近似) |
 | P5 | H.265/HM 全语法(重编译 ENC_DEC_TRACE=1)接同一链路 | HM 重编译 | 中 |
 
@@ -105,7 +105,18 @@
 - **已验证**：CABAC/CAVLC 均可解析；10帧小流解码+解析 0.26s(缓存 0.036s)；50帧 CIF(396MB/帧) 5.8s；HEVC 正确拒绝(400+中文提示);mbs=false 生效。
 - **注意打包**：`app/data/` 必须随仓库发布(已确认不被 .gitignore)。JM 源码 Latin-1。
 
+## 6c. P3 交付物 (2026-07-18 完成)
+
+- `app/preview.py` — `build_frame_map()` 建立**显示序↔解码序↔POC**映射。**关键事实(实测)**：JM 写 decoded.yuv 与 ffmpeg 出图都是**显示序(POC排序)**，而 trace 是**解码序**；多 GOP 时 POC 在每个 IDR 重置，故映射需**按 IDR 分段、段内 POC 升序**。`ensure_frame_png()` 用 `ffmpeg select=eq(n,idx)` 惰性抽显示序帧。
+- `app/mb_partition.py` — 由 mb_type/sub_mb_type/transform_size_8x8_flag/intra模式 经 **H.264 Table 7-11~7-18** 确定性还原每个子块 x/y/w/h/kind/pred。**关键坑**：JM trace 的 `mb_skip_flag` 数值**不能**当"是否跳过"——真正 skip 的宏块根本不解析 mb_type，故以 **mb_type 缺失**判 skip。子块拼接零间隙已验证(每 MB 恰好 256px²)。kind 分类：intra_4x4/8x8/16x16/pcm、inter_16x16/16x8/8x16/8x8/8x4/4x8/4x4、skip/direct。
+- `app/overlay.py` — `build_frame_overlay()` 组织每帧 blocks(子块配色+QP+MV) + `build_reference_graph()`。**关键坑**：QP 累加是 **mb_qp_delta 模 52 环绕**(`(qp+dq+52)%52`, spec 7.4.5)，不是 clamp。sliceQP=26+pic_init_qp_minus26+slice_qp_delta。MV 用 mvd 近似(真实 MV 需预测重建,列 P4+增强)；参考关系用 IDR 分段内 POC 邻近近似。
+- `app/main.py` — `/framemap`、`/frame/{disp}/image`(PNG)、`/frame/{dec}/overlay`、`/refgraph`。
+- 前端 `web/preview.js`(独立文件) — ④标签：帧 step 控件+缩放，底图<canvas>+叠加<canvas>分层，5 图层复选框(划分/QP热力/MV/帧内方向/参考关系)，块类型配色图例，帧信息面板，hover 子块 tooltip。底图按显示序、叠加按解码序(经 framemap 对应)。
+- **注意**：overlay 用 ffprobe 报告的显示尺寸(如1080)，mb_grid 用 ceil(h/16)(如68行覆盖编码1088)，底图与叠加对齐已验证(352x288 与 1920x1080 均 match)。app **不依赖 PIL**(仅测试用)。
+- **已验证**：I/P/B 子块分布合理；坐标零越界；QP 修复后范围合理；图像各显示帧 200；HD 1080p 裁剪对齐正确；全回归通过。
+
 ## 7. 待办 / 下一步
-- [ ] 等后台调研 agent 补齐 HM `TComDataCU` 访问器(getQP/getPredictionMode/getPartitionSize/getCUMvField/getInterDir/getDepth) 与 HM Analyser CLI 细节 → 供 P5 使用(不阻塞 P2-P4)。
-- [ ] 决定统一 JSON schema 的最终字段(在 P2 落地时冻结)。
-- [ ] 前端标签③④⑤ 目前是占位，随 P2-P4 填充。
+- [ ] **P4(下一步)**：需求5 原始数据按 起始码/Header/宏块 分段 + 点击宏块↔预览图高亮双向联动。可复用 P3 的 overlay.blocks[].x/y(宏块坐标) 与 trace 的 `@bit` 偏移(每 MB 起始 bit)+ NAL 字节偏移。CABAC 无法精确到 bit → 用就近字节区间近似。
+- [ ] 等后台调研 agent 补齐 HM `TComDataCU` 访问器(getQP/getPredictionMode/getPartitionSize/getCUMvField/getInterDir/getDepth) 与 HM Analyser CLI 细节 → 供 P5 使用(不阻塞 P4)。
+- [ ] 前端标签⑤ 占位，随 P4 填充；③④已完成。
+- [ ] P3 的 MV/参考关系目前是近似(mvd 未做预测重建、参考列表用 POC 邻近推导)；若需精确可选给 JM 打补丁 dump 或增强重建，列为后续增强。

@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import bitrate, config, project, syntax
+from . import bitrate, config, overlay, preview, project, syntax
 from .decoder import DecodeError
 
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
@@ -144,9 +144,63 @@ def api_frame_syntax(project_id: str, index: int, mbs: bool = True):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ---------------- 帧预览 + 叠加 (P3) ----------------
+@app.get("/api/project/{project_id}/framemap")
+def api_framemap(project_id: str):
+    """显示序 ↔ 解码序 ↔ POC 映射。"""
+    try:
+        return preview.frame_map_for(project_id)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except DecodeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except (RuntimeError, OSError) as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/project/{project_id}/frame/{display_index}/image")
+def api_frame_image(project_id: str, display_index: int):
+    """按显示序取某帧 PNG。"""
+    try:
+        png = preview.ensure_frame_png(project_id, display_index)
+        return FileResponse(str(png), media_type="image/png")
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except (RuntimeError, OSError) as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/project/{project_id}/frame/{decode_index}/overlay")
+def api_frame_overlay(project_id: str, decode_index: int):
+    """按解码序取某帧叠加数据(分割/QP/MV/子块配色)。"""
+    try:
+        return overlay.build_frame_overlay(project_id, decode_index)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except IndexError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except DecodeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except (RuntimeError, OSError) as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/project/{project_id}/refgraph")
+def api_refgraph(project_id: str):
+    """帧间参考关系图。"""
+    try:
+        return overlay.build_reference_graph(project_id)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except DecodeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except (RuntimeError, OSError) as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/health")
 def api_health():
-    return {"status": "ok", "phase": "P2"}
+    return {"status": "ok", "phase": "P3"}
 
 
 # ---------------- 静态前端 ----------------

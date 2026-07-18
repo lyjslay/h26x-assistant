@@ -13,7 +13,7 @@
     <button class="tab active" data-tab="setup">① 设置与输入</button>
     <button class="tab" data-tab="bitrate">② 码率分析</button>
     <button class="tab disabled" data-tab="syntax">③ 语法解析</button>
-    <button class="tab disabled" data-tab="preview" title="P3 阶段">④ 帧预览</button>
+    <button class="tab disabled" data-tab="preview">④ 帧预览</button>
     <button class="tab disabled" data-tab="raw" title="P4 阶段">⑤ 原始数据</button>
   </nav>
 </header>
@@ -92,11 +92,53 @@
     </div>
     <div id="synMsg" class="msg"></div>
   </section>
-  <section class="panel" id="tab-preview"><div class="placeholder">④ 帧预览与叠加绘制 —— P3 阶段实现</div></section>
+  <section class="panel" id="tab-preview">
+    <div id="pvNeedProj" class="placeholder">请先在「① 设置与输入」加载 H.264 码流<br><span class="sub">（帧预览与叠加基于 JM 解码器，当前仅支持 H.264；H.265 将在 P5 支持）</span></div>
+    <div id="pvMain" class="pv-layout" hidden>
+      <div class="pv-left">
+        <div class="row toolbar pv-step">
+          <button id="pvFirst" title="首帧">|◀</button>
+          <button id="pvPrev" title="上一帧">◀</button>
+          <span id="pvFrameLabel" class="pv-frame-label"></span>
+          <button id="pvNext" title="下一帧">▶</button>
+          <button id="pvLast" title="末帧">▶|</button>
+          <input type="number" id="pvJump" min="0" placeholder="帧号" title="跳转显示帧" />
+          <span class="spacer"></span>
+          <label title="放大倍数">缩放 <input type="range" id="pvZoom" min="0.25" max="3" step="0.05" value="1"></label>
+          <span id="pvZoomVal" class="zoomval">100%</span>
+        </div>
+        <div id="pvCanvasWrap" class="pv-canvas-wrap">
+          <canvas id="pvBase"></canvas>
+          <canvas id="pvOverlay"></canvas>
+          <div id="pvTip" class="tooltip"></div>
+        </div>
+      </div>
+      <aside class="pv-right">
+        <div class="pv-panel">
+          <div class="pv-panel-hd">叠加图层</div>
+          <label><input type="checkbox" id="lyGrid" checked> 宏块/子块划分</label>
+          <label><input type="checkbox" id="lyQp"> QP 热力</label>
+          <label><input type="checkbox" id="lyMv"> 运动矢量 (MV)</label>
+          <label><input type="checkbox" id="lyIntra"> 帧内预测方向</label>
+          <label><input type="checkbox" id="lyRef"> 帧间参考关系</label>
+        </div>
+        <div class="pv-panel" id="pvLegend">
+          <div class="pv-panel-hd">块类型图例</div>
+          <div id="pvLegendBody" class="legend-body"></div>
+        </div>
+        <div class="pv-panel" id="pvInfo">
+          <div class="pv-panel-hd">当前帧</div>
+          <div id="pvInfoBody" class="info-body"></div>
+        </div>
+      </aside>
+    </div>
+    <div id="pvMsg" class="msg"></div>
+  </section>
   <section class="panel" id="tab-raw"><div class="placeholder">⑤ 原始数据分段 —— P4 阶段实现</div></section>
 </main>
 
 <script src="/static/chart.js"></script>
+<script src="/static/preview.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

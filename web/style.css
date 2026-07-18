@@ -157,3 +157,34 @@ table.fields .desc { color: #8891a8; font-size: 11.5px; }
 table.fields .clause { color: #55617d; font-family: monospace; font-size: 11px; }
 .mb-grid-hd { color: #7d89a5; font-size: 12px; padding: 6px 2px; }
 tr.hl td { background: #3b2f13 !important; }
+
+/* ---- 帧预览页 ---- */
+.pv-layout { display: flex; gap: 14px; height: calc(100vh - 150px); }
+.pv-left { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+.pv-right { width: 250px; flex-shrink: 0; overflow-y: auto; }
+.pv-step { flex-wrap: nowrap; }
+.pv-step button { padding: 6px 10px; }
+.pv-frame-label { font-family: monospace; color: #e8edf7; min-width: 150px; text-align: center; }
+#pvJump { width: 70px; }
+.zoomval { font-family: monospace; color: #9aa7c0; width: 44px; }
+.pv-step label { display: inline-flex; align-items: center; gap: 6px; }
+#pvZoom { width: 120px; }
+
+.pv-canvas-wrap { position: relative; flex: 1; overflow: auto; margin-top: 8px;
+  background: #05070d; border: 1px solid #263049; border-radius: 8px; }
+#pvBase, #pvOverlay { position: absolute; top: 0; left: 0;
+  image-rendering: pixelated; }
+#pvOverlay { pointer-events: none; }
+
+.pv-panel { background: #161c2c; border: 1px solid #263049; border-radius: 8px;
+  padding: 10px 12px; margin-bottom: 10px; }
+.pv-panel-hd { color: #a8c0ff; font-size: 13px; font-weight: 600; margin-bottom: 8px; }
+.pv-panel label { display: flex; align-items: center; gap: 7px; padding: 3px 0;
+  font-size: 13px; cursor: pointer; }
+.legend-body { display: flex; flex-direction: column; gap: 4px; }
+.legend-item { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #cdd6ea; }
+.legend-swatch { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0;
+  border: 1px solid #ffffff33; }
+.info-body { font-size: 12.5px; color: #cdd6ea; }
+.info-body .k { color: #7d89a5; display: inline-block; width: 74px; }
+.info-body div { padding: 2px 0; }
