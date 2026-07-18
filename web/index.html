@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>码流分析工具</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">码流分析工具 <span class="phase">P1</span></div>
+  <nav class="tabs">
+    <button class="tab active" data-tab="setup">① 设置与输入</button>
+    <button class="tab" data-tab="bitrate">② 码率分析</button>
+    <button class="tab disabled" data-tab="syntax" title="P2 阶段">③ 语法解析</button>
+    <button class="tab disabled" data-tab="preview" title="P3 阶段">④ 帧预览</button>
+    <button class="tab disabled" data-tab="raw" title="P4 阶段">⑤ 原始数据</button>
+  </nav>
+</header>
+
+<main>
+  <!-- ① 设置与输入 -->
+  <section class="panel active" id="tab-setup">
+    <h2>工具路径</h2>
+    <p class="hint">留空则自动探测；修改后点“保存并校验”。绿灯=可用，红灯=不可用。</p>
+    <div class="cfg-grid" id="cfgGrid"></div>
+    <div class="row">
+      <button id="btnSaveCfg" class="primary">保存并校验</button>
+      <button id="btnVerify">重新校验</button>
+      <span id="cfgMsg" class="msg"></span>
+    </div>
+
+    <h2>输入文件</h2>
+    <p class="hint">支持裸码流(.264/.h264/.265/.hevc/.bin)或封装视频(.mp4/.mkv/.ts/.flv…，将自动解封装为 Annex-B)。</p>
+    <div class="row">
+      <input type="text" id="inputPath" placeholder="输入文件绝对路径，例如 /media/cvitek/yijun.liu01/jmhm/res/4321.mp4" />
+      <button id="btnCreateProj" class="primary">加载 / 分析</button>
+    </div>
+    <div class="row">
+      <button id="btnUseSample" class="link">使用样本 res/4321.mp4</button>
+    </div>
+    <div id="projInfo" class="proj-info"></div>
+    <div id="setupMsg" class="msg"></div>
+  </section>
+
+  <!-- ② 码率分析 -->
+  <section class="panel" id="tab-bitrate">
+    <div class="row toolbar">
+      <label><input type="radio" name="brmode" value="frame" checked> 逐帧</label>
+      <label><input type="radio" name="brmode" value="second"> 逐秒</label>
+      <label><input type="checkbox" id="showGop" checked> GOP 平均阶梯线</label>
+      <label><input type="checkbox" id="showTypes" checked> I/关键帧标记</label>
+      <span class="spacer"></span>
+      <button id="btnReloadBr">刷新</button>
+    </div>
+    <div id="brSummary" class="summary-cards"></div>
+    <div class="chart-wrap">
+      <canvas id="brChart" width="1200" height="420"></canvas>
+      <div id="brTooltip" class="tooltip"></div>
+    </div>
+    <div id="brMsg" class="msg"></div>
+  </section>
+
+  <section class="panel" id="tab-syntax"><div class="placeholder">③ 码流语法解析 —— P2 阶段实现</div></section>
+  <section class="panel" id="tab-preview"><div class="placeholder">④ 帧预览与叠加绘制 —— P3 阶段实现</div></section>
+  <section class="panel" id="tab-raw"><div class="placeholder">⑤ 原始数据分段 —— P4 阶段实现</div></section>
+</main>
+
+<script src="/static/chart.js"></script>
+<script src="/static/app.js"></script>
+</body>
+</html>

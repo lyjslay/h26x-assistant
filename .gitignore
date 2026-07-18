@@ -1,0 +1,16 @@
+# 工程运行时数据
+workdir/*
+!workdir/.gitkeep
+
+# python
+venv/
+__pycache__/
+*.pyc
+*.pyo
+.Python
+
+# 编辑器 / 系统
+.DS_Store
+.idea/
+.vscode/
+*.swp
