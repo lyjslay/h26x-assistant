@@ -10,7 +10,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import bitrate, config, project
+from . import bitrate, config, project, syntax
+from .decoder import DecodeError
 
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 
@@ -114,9 +115,38 @@ def api_bitrate(project_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ---------------- 语法解析 (P2) ----------------
+@app.get("/api/project/{project_id}/syntax")
+def api_syntax_overview(project_id: str):
+    """帧列表总览(触发解码+解析，惰性缓存)。"""
+    try:
+        return syntax.syntax_overview(project_id)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except DecodeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except (RuntimeError, OSError) as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/project/{project_id}/frame/{index}/syntax")
+def api_frame_syntax(project_id: str, index: int, mbs: bool = True):
+    """单帧完整语法树(NAL 字段 + 宏块字段)。mbs=false 可省略宏块。"""
+    try:
+        return syntax.frame_syntax(project_id, index, include_mbs=mbs)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except IndexError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except DecodeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except (RuntimeError, OSError) as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/health")
 def api_health():
-    return {"status": "ok", "phase": "P1"}
+    return {"status": "ok", "phase": "P2"}
 
 
 # ---------------- 静态前端 ----------------

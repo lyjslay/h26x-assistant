@@ -2,7 +2,8 @@
 (function () {
   "use strict";
 
-  const state = { config: {}, verify: {}, project: null, bitrate: null };
+  const state = { config: {}, verify: {}, project: null, bitrate: null,
+                  syntax: null, synFrame: null, synFrameCache: {} };
 
   const CFG_LABELS = {
     ffmpeg: "ffmpeg",
@@ -35,6 +36,7 @@
         t.classList.add("active");
         $("#tab-" + t.dataset.tab).classList.add("active");
         if (t.dataset.tab === "bitrate" && state.project && !state.bitrate) loadBitrate();
+        if (t.dataset.tab === "syntax" && state.project && !state.syntax) loadSyntax();
       });
     });
   }
@@ -99,9 +101,16 @@
   /* ---------- 工程 ---------- */
   function onProjectCreated(proj) {
     state.project = proj; state.bitrate = null;
+    state.syntax = null; state.synFrame = null; state.synFrameCache = {};
     renderProjInfo();
-    setMsg("#setupMsg", "工程已建立，切到「② 码率分析」查看曲线", "ok");
     enableTab("bitrate");
+    if (proj.codec === "h264") {
+      enableTab("syntax");
+      setMsg("#setupMsg", "工程已建立：可查看「② 码率分析」与「③ 语法解析」", "ok");
+    } else {
+      disableTab("syntax");
+      setMsg("#setupMsg", "工程已建立，查看「② 码率分析」。（③语法解析当前仅支持 H.264，H.265 待 P5）", "ok");
+    }
   }
 
   // 浏览器上传本机文件(默认方式)，带进度条
@@ -181,6 +190,10 @@
   function enableTab(name) {
     const t = document.querySelector('.tab[data-tab="' + name + '"]');
     if (t) t.classList.remove("disabled");
+  }
+  function disableTab(name) {
+    const t = document.querySelector('.tab[data-tab="' + name + '"]');
+    if (t) t.classList.add("disabled");
   }
 
   /* ---------- 码率 ---------- */
@@ -280,6 +293,144 @@
     chart.setData(series, markers);
   }
 
+  /* ---------- 语法解析 (③) ---------- */
+  async function loadSyntax() {
+    if (!state.project || state.project.codec !== "h264") return;
+    $("#synNeedProj").hidden = true;
+    setMsg("#synMsg", "正在调用 JM 解码器解析语法（首次较慢，稍候）…", "");
+    try {
+      state.syntax = await api("/api/project/" + state.project.id + "/syntax");
+      $("#synMain").hidden = false;
+      renderFrameList();
+      setMsg("#synMsg", "", "");
+      if (state.syntax.frames.length) selectFrame(0);
+    } catch (e) {
+      $("#synNeedProj").hidden = false;
+      setMsg("#synMsg", "解析失败: " + e.message, "err");
+    }
+  }
+
+  function renderFrameList() {
+    const ul = $("#synFrameList"); ul.innerHTML = "";
+    $("#synFrameCount").textContent = state.syntax.num_frames + " 帧";
+    state.syntax.frames.forEach(function (f) {
+      const li = el("li"); li.dataset.idx = f.index;
+      const badge = el("span", "ftype " + f.slice_type, f.slice_type);
+      const info = el("div", "finfo");
+      info.innerHTML = "帧 " + f.index + " · POC " + f.poc +
+        "<div class='sub'>" + f.num_mbs + " MB · fnum " +
+        (f.frame_num == null ? "-" : f.frame_num) + "</div>";
+      li.appendChild(badge); li.appendChild(info);
+      li.addEventListener("click", function () { selectFrame(f.index); });
+      ul.appendChild(li);
+    });
+  }
+
+  async function selectFrame(idx) {
+    document.querySelectorAll("#synFrameList li").forEach(function (li) {
+      li.classList.toggle("active", +li.dataset.idx === idx);
+    });
+    setMsg("#synMsg", "", "");
+    let data = state.synFrameCache[idx];
+    if (!data) {
+      try {
+        data = await api("/api/project/" + state.project.id + "/frame/" + idx + "/syntax");
+        state.synFrameCache[idx] = data;
+      } catch (e) { setMsg("#synMsg", "加载帧语法失败: " + e.message, "err"); return; }
+    }
+    state.synFrame = data;
+    renderFrameSyntax();
+  }
+
+  function fieldRows(fields) {
+    let html = "<table class='fields'><thead><tr>" +
+      "<th>英文名</th><th>中文名</th><th class='bit'>bit</th>" +
+      "<th class='bin'>二进制</th><th class='val'>数值</th>" +
+      "<th>含义</th><th class='clause'>章节</th></tr></thead><tbody>";
+    fields.forEach(function (f) {
+      html += "<tr data-field='" + esc(f.name_en) + "'>" +
+        "<td class='en'>" + esc(f.name_en) + "</td>" +
+        "<td class='zh'>" + esc(f.name_zh || "") + "</td>" +
+        "<td class='bit'>@" + (f.bit == null ? "" : f.bit) + "</td>" +
+        "<td class='bin'>" + esc(f.binary || "") + "</td>" +
+        "<td class='val'>" + (f.value == null ? "" : f.value) + "</td>" +
+        "<td class='desc'>" + esc(f.desc || "") + "</td>" +
+        "<td class='clause'>" + esc(f.clause || "") + "</td></tr>";
+    });
+    return html + "</tbody></table>";
+  }
+
+  function group(title, zh, badge, meta, bodyHtml, open) {
+    return "<div class='syn-group" + (open ? " open" : "") + "'>" +
+      "<div class='hd'><span class='tw'>" + (open ? "▾" : "▸") + "</span>" +
+      "<span class='nm'>" + esc(title) + "</span>" +
+      (zh ? "<span class='zh'>" + esc(zh) + "</span>" : "") +
+      (badge ? "<span class='badge'>" + esc(badge) + "</span>" : "") +
+      (meta ? "<span class='meta'>" + esc(meta) + "</span>" : "") +
+      "</div><div class='body'>" + bodyHtml + "</div></div>";
+  }
+
+  function renderFrameSyntax() {
+    const fr = state.synFrame;
+    $("#synFrameTitle").textContent =
+      "帧 " + fr.index + " · " + fr.slice_type + " 片 · POC " + fr.poc +
+      " · frame_num " + (fr.frame_num == null ? "-" : fr.frame_num) +
+      " · " + fr.num_mbs + " 宏块";
+    const showMbs = $("#synShowMbs").checked;
+    let html = "";
+    // NAL 分组
+    fr.nals.forEach(function (n, i) {
+      const meta = "type " + n.nal_unit_type + " · " + (n.length || "?") + " B · " +
+        n.startcode + "startcode · " + n.fields.length + " 字段";
+      const body = n.fields.length ? fieldRows(n.fields) :
+        "<div class='mb-grid-hd'>（该 NAL 无逐字段 trace，如 SEI 负载）</div>";
+      html += group(n.name_en, n.name_zh, "NAL", meta, body, i === 0 || n.is_slice);
+    });
+    // 宏块分组(可折叠，默认收起以防过大)
+    if (showMbs && fr.macroblocks) {
+      fr.macroblocks.forEach(function (mb) {
+        const meta = "type " + mb.type_code + " · " + mb.fields.length + " 字段 · " +
+          mb.num_residual_coeffs + " 残差";
+        html += group("MB " + mb.mb_index, "宏块 " + mb.mb_index,
+          mb.slice_kind, meta, fieldRows(mb.fields), false);
+      });
+    }
+    const box = $("#synContent"); box.innerHTML = html;
+    // 折叠交互
+    box.querySelectorAll(".syn-group > .hd").forEach(function (hd) {
+      hd.addEventListener("click", function () {
+        const g = hd.parentElement;
+        g.classList.toggle("open");
+        hd.querySelector(".tw").textContent = g.classList.contains("open") ? "▾" : "▸";
+      });
+    });
+    applySynSearch();
+  }
+
+  function applySynSearch() {
+    const q = ($("#synSearch").value || "").trim().toLowerCase();
+    const box = $("#synContent");
+    box.querySelectorAll("table.fields tr[data-field]").forEach(function (tr) {
+      if (!q) { tr.style.display = ""; return; }
+      const txt = tr.textContent.toLowerCase();
+      tr.style.display = txt.indexOf(q) >= 0 ? "" : "none";
+    });
+    // 有命中的组自动展开
+    if (q) {
+      box.querySelectorAll(".syn-group").forEach(function (g) {
+        const anyVisible = Array.prototype.some.call(
+          g.querySelectorAll("tr[data-field]"), function (tr) { return tr.style.display !== "none"; });
+        if (anyVisible) { g.classList.add("open"); g.querySelector(".tw").textContent = "▾"; }
+      });
+    }
+  }
+
+  function esc(s) {
+    return String(s == null ? "" : s).replace(/[&<>"]/g, function (c) {
+      return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c];
+    });
+  }
+
   /* ---------- init ---------- */
   function init() {
     initTabs();
@@ -311,6 +462,8 @@
       r.addEventListener("change", drawBitrate));
     $("#showGop").addEventListener("change", drawBitrate);
     $("#showTypes").addEventListener("change", drawBitrate);
+    $("#synSearch").addEventListener("input", applySynSearch);
+    $("#synShowMbs").addEventListener("change", function () { if (state.synFrame) renderFrameSyntax(); });
     window.addEventListener("resize", function () { if (chart && state.bitrate) chart.draw(); });
   }
 

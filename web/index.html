@@ -12,7 +12,7 @@
   <nav class="tabs">
     <button class="tab active" data-tab="setup">① 设置与输入</button>
     <button class="tab" data-tab="bitrate">② 码率分析</button>
-    <button class="tab disabled" data-tab="syntax" title="P2 阶段">③ 语法解析</button>
+    <button class="tab disabled" data-tab="syntax">③ 语法解析</button>
     <button class="tab disabled" data-tab="preview" title="P3 阶段">④ 帧预览</button>
     <button class="tab disabled" data-tab="raw" title="P4 阶段">⑤ 原始数据</button>
   </nav>
@@ -70,7 +70,28 @@
     <div id="brMsg" class="msg"></div>
   </section>
 
-  <section class="panel" id="tab-syntax"><div class="placeholder">③ 码流语法解析 —— P2 阶段实现</div></section>
+  <section class="panel" id="tab-syntax">
+    <div id="synNeedProj" class="placeholder">请先在「① 设置与输入」加载 H.264 码流<br><span class="sub">（语法解析基于 JM 解码器，当前仅支持 H.264；H.265 将在 P5 支持）</span></div>
+    <div id="synMain" class="syn-layout" hidden>
+      <aside class="syn-frames">
+        <div class="syn-frames-hd">
+          <span>帧列表</span>
+          <span id="synFrameCount" class="count"></span>
+        </div>
+        <ul id="synFrameList" class="frame-list"></ul>
+      </aside>
+      <div class="syn-tree">
+        <div class="row toolbar">
+          <span id="synFrameTitle" class="syn-title"></span>
+          <span class="spacer"></span>
+          <input type="text" id="synSearch" placeholder="搜索字段(中/英文)…" />
+          <label><input type="checkbox" id="synShowMbs" checked> 显示宏块</label>
+        </div>
+        <div id="synContent" class="syn-content"></div>
+      </div>
+    </div>
+    <div id="synMsg" class="msg"></div>
+  </section>
   <section class="panel" id="tab-preview"><div class="placeholder">④ 帧预览与叠加绘制 —— P3 阶段实现</div></section>
   <section class="panel" id="tab-raw"><div class="placeholder">⑤ 原始数据分段 —— P4 阶段实现</div></section>
 </main>

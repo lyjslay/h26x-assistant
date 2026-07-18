@@ -32,7 +32,7 @@
 | 期 | 内容 | 工具 | 风险 |
 |---|---|---|---|
 | P1 | 需求1 路径配置+解封装 · 需求2 码率曲线(逐帧/逐秒/GOP) | ffprobe | ✅ 已完成 |
-| P2 | 需求3 H.264 逐帧逐宏块语法解析(JM trace→JSON)+中英文字典 | JM stock | 低(已验证) |
+| P2 | 需求3 H.264 逐帧逐宏块语法解析(JM trace→JSON)+中英文字典 | JM stock | ✅ 已完成 |
 | P3 | 需求4 帧预览+**子块级**分割/QP/MV/参考关系叠加 | ffmpeg 出帧 + P2 数据 | 中 |
 | P4 | 需求5 原始数据分段 + hex↔预览双向高亮联动 | P2 的 bit offset | 中(CABAC 字节近似) |
 | P5 | H.265/HM 全语法(重编译 ENC_DEC_TRACE=1)接同一链路 | HM 重编译 | 中 |
@@ -94,9 +94,18 @@
 - 启动：`cd streamtool && ./run.sh` → `http://127.0.0.1:8731`。
 - **已端到端验证**：res/4321.mp4(demux,323帧22GOP)、16.06.mp4(1358帧46GOP)、watermark_mosac.h265(raw,983帧66GOP)、坏路径错误处理、静态资源200 全通过。FastAPI 0.124/uvicorn 0.33 本机已装。
 
-## 7. 待办 / 下一步
+## 6b. P2 交付物 (2026-07-18 完成)
 
-- [ ] **P2**：JM trace→统一JSON 语法解析 + 中英文字典(参 §3、§4)。这是下一步。
+- `app/decoder.py` — `ensure_h264_trace()` 在工程目录 cwd 内跑 `ldecod.exe -p InputFile=.. -p OutputFile=decoded.yuv`，生成 `trace_dec.txt`；按源流 mtime+size 打戳缓存，幂等。仅 H.264(HEVC 抛 DecodeError 待 P5)。
+- `app/jm_trace_parser.py`(latin-1) — 解析 NALU banner/字段行/`*** POC/MB ***` 分隔符 → `{frames:[{index,poc,slice_type,frame_num,nals:[{fields}],macroblocks:[{fields,residuals}]}], nal_index}`。**关键坑**：JM 有"预读下一个 slice header"行为(slice NAL 比其宏块提前一拍)，用 slice_fifo(FIFO bundle) 而非就近归属解决。CAVLC 系数编码中间量(coeff_token/level 等，`_COEFF_MARKERS`)路由到 residuals 桶，保持语法字段干净。
+- `app/data/syntax_dict_h264.json` — H.264 字段英文名→{zh,desc,clause}；覆盖 SPS/VUI/PPS/SliceHeader/MB 全部字段。实测 MB/NAL 字段中文覆盖 100%。
+- `app/syntax.py` — `syntax_overview()`(帧列表) + `frame_syntax(idx, include_mbs)`(单帧语法树)；`_normalize_field_name` 归一 JM 通用名(mvd_l→mvd_l0 等)；两级磁盘缓存(trace + parsed)。
+- `app/main.py` — `GET /api/project/{id}/syntax`、`GET /api/project/{id}/frame/{index}/syntax?mbs=`。
+- 前端 `web/` — ③标签启用(仅 H.264)：左侧帧列表(I/P/B 色块+POC+fnum)，右侧 NAL/MB 分组折叠语法树(英文名|中文名|bit|二进制|数值|含义|章节)，字段搜索(中/英,命中自动展开),显示宏块开关。
+- **已验证**：CABAC/CAVLC 均可解析；10帧小流解码+解析 0.26s(缓存 0.036s)；50帧 CIF(396MB/帧) 5.8s；HEVC 正确拒绝(400+中文提示);mbs=false 生效。
+- **注意打包**：`app/data/` 必须随仓库发布(已确认不被 .gitignore)。JM 源码 Latin-1。
+
+## 7. 待办 / 下一步
 - [ ] 等后台调研 agent 补齐 HM `TComDataCU` 访问器(getQP/getPredictionMode/getPartitionSize/getCUMvField/getInterDir/getDepth) 与 HM Analyser CLI 细节 → 供 P5 使用(不阻塞 P2-P4)。
 - [ ] 决定统一 JSON schema 的最终字段(在 P2 落地时冻结)。
 - [ ] 前端标签③④⑤ 目前是占位，随 P2-P4 填充。
