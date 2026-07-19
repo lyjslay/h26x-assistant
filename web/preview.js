@@ -36,7 +36,7 @@
     dispIndex: 0, overlay: null, imgW: 0, imgH: 0, zoom: 1,
     img: new Image(),
     layers: { grid: true, qp: false, mv: false, intra: false, ref: false },
-    overlayCache: {},
+    overlayCache: {}, hlMb: null,
   };
 
   function $(id) { return document.getElementById(id); }
@@ -149,6 +149,21 @@
     if (st.layers.intra) drawIntraLayer(ctx, z);
     if (st.layers.mv) drawMvLayer(ctx, z);
     if (st.layers.ref) drawRefBadge(ctx, z);
+    if (st.hlMb != null) drawHighlight(ctx, z);
+  }
+
+  function drawHighlight(ctx, z) {
+    var b = null;
+    for (var i = 0; i < st.overlay.blocks.length; i++) {
+      if (st.overlay.blocks[i].mb_index === st.hlMb) { b = st.overlay.blocks[i]; break; }
+    }
+    if (!b) return;
+    ctx.save();
+    ctx.strokeStyle = "#ffd54f"; ctx.lineWidth = 3;
+    ctx.strokeRect(b.x * z + 1.5, b.y * z + 1.5, b.w * z - 3, b.h * z - 3);
+    ctx.fillStyle = "rgba(255,213,79,0.25)";
+    ctx.fillRect(b.x * z, b.y * z, b.w * z, b.h * z);
+    ctx.restore();
   }
 
   function drawGridLayer(ctx, z) {
@@ -335,6 +350,32 @@
       } else { tip.style.display = "none"; }
     });
     wrap.addEventListener("mouseleave", function () { tip.style.display = "none"; });
+    // 点击宏块 → 高亮 + 通知原始数据页联动
+    wrap.addEventListener("click", function (ev) {
+      if (!st.overlay) return;
+      var rect = ov.getBoundingClientRect();
+      var px = (ev.clientX - rect.left) / st.zoom, py = (ev.clientY - rect.top) / st.zoom;
+      for (var i = 0; i < st.overlay.blocks.length; i++) {
+        var b = st.overlay.blocks[i];
+        if (px >= b.x && px < b.x + b.w && py >= b.y && py < b.y + b.h) {
+          st.hlMb = b.mb_index; drawOverlay();
+          if (global.RawView && global.RawView.showMbFromPreview)
+            global.RawView.showMbFromPreview(st.overlay.decode_index, b.mb_index);
+          break;
+        }
+      }
+    });
+  }
+
+  // 供原始数据页反向调用：切到该解码帧并高亮宏块
+  function highlightMb(decodeIndex, mb) {
+    var di = st.framemap ? st.framemap.decode_to_display[decodeIndex] : null;
+    if (di == null) { st.hlMb = mb; if (st.overlay) drawOverlay(); return; }
+    if (di !== st.dispIndex) {
+      showFrame(di).then(function () { st.hlMb = mb; drawOverlay(); });
+    } else {
+      st.hlMb = mb; drawOverlay();
+    }
   }
 
   function init() {
@@ -359,5 +400,9 @@
     bindHover();
   }
 
-  global.Preview = { init: init, load: load, isLoaded: function () { return !!st.framemap; } };
+  global.Preview = {
+    init: init, load: load,
+    isLoaded: function () { return !!st.framemap; },
+    highlightMb: highlightMb,
+  };
 })(window);

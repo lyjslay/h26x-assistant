@@ -188,3 +188,30 @@ tr.hl td { background: #3b2f13 !important; }
 .info-body { font-size: 12.5px; color: #cdd6ea; }
 .info-body .k { color: #7d89a5; display: inline-block; width: 74px; }
 .info-body div { padding: 2px 0; }
+
+/* ---- 原始数据页 ---- */
+.rw-layout { display: flex; flex-direction: column; height: calc(100vh - 150px); }
+.map-note { font-size: 12px; color: #d0a24a; }
+.rw-body { display: flex; gap: 14px; flex: 1; min-height: 0; margin-top: 8px; }
+.rw-hexwrap { flex: 1; overflow: auto; background: #0b0f19; border: 1px solid #263049;
+  border-radius: 8px; padding: 8px 10px; }
+.rw-side { width: 260px; flex-shrink: 0; overflow-y: auto; }
+.hexview { font-family: monospace; font-size: 12px; line-height: 1.6; white-space: nowrap; }
+.hex-row { display: flex; gap: 12px; }
+.hex-off { color: #55617d; user-select: none; min-width: 64px; }
+.hex-bytes { letter-spacing: 0; }
+.hex-b { padding: 0 1px; cursor: default; }
+.hex-b.sc { background: #e0563b44; }
+.hex-b.nal_header { background: #e0a23b55; }
+.hex-b.param_set { background: #8e7cc344; }
+.hex-b.sei { background: #4a90b844; }
+.hex-b.slice_header { background: #3ba86b44; }
+.hex-b.mb0 { background: #3b6ea833; cursor: pointer; }
+.hex-b.mb1 { background: #2a527f55; cursor: pointer; }
+.hex-b.mbsel { background: #ffd54f !important; color: #000; }
+.hex-b.mbhover { outline: 1px solid #ffd54f; }
+.seg-list { font-size: 11.5px; max-height: 260px; overflow-y: auto; }
+.seg-list .seg { padding: 2px 4px; cursor: pointer; border-radius: 3px;
+  display: flex; justify-content: space-between; gap: 8px; }
+.seg-list .seg:hover { background: #1f2740; }
+.seg-list .seg .rng { color: #7d89a5; font-family: monospace; }

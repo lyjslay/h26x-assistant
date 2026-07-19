@@ -34,7 +34,7 @@
 | P1 | 需求1 路径配置+解封装 · 需求2 码率曲线(逐帧/逐秒/GOP) | ffprobe | ✅ 已完成 |
 | P2 | 需求3 H.264 逐帧逐宏块语法解析(JM trace→JSON)+中英文字典 | JM stock | ✅ 已完成 |
 | P3 | 需求4 帧预览+**子块级**分割/QP/MV/参考关系叠加 | ffmpeg 出帧 + P2 数据 | ✅ 已完成 |
-| P4 | 需求5 原始数据分段 + hex↔预览双向高亮联动 | P2 的 bit offset | 中(CABAC 字节近似) |
+| P4 | 需求5 原始数据分段 + hex↔预览双向高亮联动 | P2 的 bit offset | ✅ 已完成 |
 | P5 | H.265/HM 全语法(重编译 ENC_DEC_TRACE=1)接同一链路 | HM 重编译 | 中 |
 
 ---
@@ -115,8 +115,20 @@
 - **注意**：overlay 用 ffprobe 报告的显示尺寸(如1080)，mb_grid 用 ceil(h/16)(如68行覆盖编码1088)，底图与叠加对齐已验证(352x288 与 1920x1080 均 match)。app **不依赖 PIL**(仅测试用)。
 - **已验证**：I/P/B 子块分布合理；坐标零越界；QP 修复后范围合理；图像各显示帧 200；HD 1080p 裁剪对齐正确；全回归通过。
 
+## 6d. P4 交付物 (2026-07-18 完成)
+
+- `app/nal_bytes.py` — `scan_nals()` 扫 Annex-B 起始码(00 00 01 / 00 00 00 01)，给每 NAL 的 sc_start/payload_start/nal_end 字节精确区间。顺序与 trace 的 nal_index 一致。
+- `app/rawmap.py` — `build_frame_rawmap()` 每帧分段：起始码/NAL头/SPS-PPS/SEI/片头/各宏块。**字节精确**部分=起始码+NAL头+参数集载荷(来自字节扫描)。宏块字节区间=用 trace 每 MB 的**相对 bit**(`mb_i.first_bit - mb_0.first_bit`)按比例映射到 slice 载荷字节区间。**关键坑/事实**：
+  - trace `@bit` 是**全局累积计数**，不是每 NAL 重置；且有 P2 的读前一拍现象。
+  - CAVLC：@bit 是真实比特位置 → 宏块字节**精确**(实测 slice bit 跨度/8 ≈ NAL len 字节)。
+  - CABAC：@bit 是**符号计数**(算术编码不按 bit 对齐) → 宏块字节**近似**，rawmap 标 `mb_mapping=approx`、每 MB 段 `approx=true`。判 CAVLC/CABAC 看 PPS `entropy_coding_mode_flag`。
+  - 片头字节数由 trace SH 字段 bit 跨度估算；MB 段实测零间隙、连续覆盖到 nal_end。
+- `app/main.py` — `/frame/{d}/rawmap?hexdata=&max_bytes=`：返回分段 + hex 字符串(默认上限 256KiB，超出截断标注)。
+- 前端 `web/rawview.js`(独立文件) — ⑤标签：逐帧(解码序)hex 视图，每字节按分段着色(起始码/NAL头/参数集/SEI/片头/宏块交替深浅)，分段图例+分段列表。**双向联动**：hex 点宏块→高亮+滚动+调 `Preview.highlightMb(decodeIndex,mb)` 切帧预览高亮；预览点宏块→调 `RawView.showMbFromPreview` 反向。共享 mb_index；overlay 与 rawmap 的宏块索引集合实测完全一致。
+- preview.js 增 `highlightMb()`(经 framemap.decode_to_display 切到对应显示帧再高亮) 与预览 click→通知 RawView。
+- **已验证**：起始码字节=00000001；CAVLC exact/CABAC approx 标注正确；overlay↔rawmap 宏块索引一致(99/99)；全回归通过。
+
 ## 7. 待办 / 下一步
-- [ ] **P4(下一步)**：需求5 原始数据按 起始码/Header/宏块 分段 + 点击宏块↔预览图高亮双向联动。可复用 P3 的 overlay.blocks[].x/y(宏块坐标) 与 trace 的 `@bit` 偏移(每 MB 起始 bit)+ NAL 字节偏移。CABAC 无法精确到 bit → 用就近字节区间近似。
-- [ ] 等后台调研 agent 补齐 HM `TComDataCU` 访问器(getQP/getPredictionMode/getPartitionSize/getCUMvField/getInterDir/getDepth) 与 HM Analyser CLI 细节 → 供 P5 使用(不阻塞 P4)。
-- [ ] 前端标签⑤ 占位，随 P4 填充；③④已完成。
-- [ ] P3 的 MV/参考关系目前是近似(mvd 未做预测重建、参考列表用 POC 邻近推导)；若需精确可选给 JM 打补丁 dump 或增强重建，列为后续增强。
+- [ ] **P5(下一步)**：需求 H.265/HEVC CU 级分析——重编译 HM `TLibDecoderAnalyser` 加 `-DENC_DEC_TRACE=1`(改 `HM/build/linux/lib/TLibDecoderAnalyser/makefile` DEFS)，解析 HM DTRACE → 接同一 JSON schema。CTU 四叉树/PU 分割/TU RQT，配色思路同 P3。等后台调研 agent 的 HM `TComDataCU` 访问器与 CLI 细节。
+- [ ] 需求1~5 的 H.264 全链路已完成(P1-P4)；H.265 仅码率(P1)可用，语法/预览/原始数据待 P5。
+- [ ] P3 的 MV/参考关系是近似(mvd 未做预测重建、参考列表用 POC 邻近推导)；P4 的 CABAC 宏块字节是近似。若需精确可给 JM 打补丁 dump 每 MB 的最终 mv/ref 与精确字节位置，列为后续增强。

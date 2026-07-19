@@ -14,7 +14,7 @@
     <button class="tab" data-tab="bitrate">② 码率分析</button>
     <button class="tab disabled" data-tab="syntax">③ 语法解析</button>
     <button class="tab disabled" data-tab="preview">④ 帧预览</button>
-    <button class="tab disabled" data-tab="raw" title="P4 阶段">⑤ 原始数据</button>
+    <button class="tab disabled" data-tab="raw">⑤ 原始数据</button>
   </nav>
 </header>
 
@@ -134,11 +134,54 @@
     </div>
     <div id="pvMsg" class="msg"></div>
   </section>
-  <section class="panel" id="tab-raw"><div class="placeholder">⑤ 原始数据分段 —— P4 阶段实现</div></section>
+  <section class="panel" id="tab-raw">
+    <div id="rwNeedProj" class="placeholder">请先在「① 设置与输入」加载 H.264 码流<br><span class="sub">（原始数据分段基于 JM 解码器，当前仅支持 H.264；H.265 将在 P5 支持）</span></div>
+    <div id="rwMain" class="rw-layout" hidden>
+      <div class="rw-top row toolbar">
+        <button id="rwFirst" title="首帧">|◀</button>
+        <button id="rwPrev" title="上一帧">◀</button>
+        <span id="rwFrameLabel" class="pv-frame-label"></span>
+        <button id="rwNext" title="下一帧">▶</button>
+        <button id="rwLast" title="末帧">▶|</button>
+        <input type="number" id="rwJump" min="0" placeholder="解码帧号" title="跳转(解码序)" />
+        <span class="spacer"></span>
+        <span id="rwMapNote" class="map-note"></span>
+      </div>
+      <div class="rw-body">
+        <div class="rw-hexwrap">
+          <div id="rwHex" class="hexview"></div>
+        </div>
+        <aside class="rw-side">
+          <div class="pv-panel">
+            <div class="pv-panel-hd">分段图例</div>
+            <div class="legend-body">
+              <div class="legend-item"><span class="legend-swatch" style="background:#e0563b"></span>起始码</div>
+              <div class="legend-item"><span class="legend-swatch" style="background:#e0a23b"></span>NAL 头</div>
+              <div class="legend-item"><span class="legend-swatch" style="background:#8e7cc3"></span>参数集 SPS/PPS</div>
+              <div class="legend-item"><span class="legend-swatch" style="background:#4a90b8"></span>SEI</div>
+              <div class="legend-item"><span class="legend-swatch" style="background:#3ba86b"></span>片头 Slice Header</div>
+              <div class="legend-item"><span class="legend-swatch" style="background:#3b6ea8"></span>宏块（交替深浅）</div>
+            </div>
+          </div>
+          <div class="pv-panel">
+            <div class="pv-panel-hd">选中宏块</div>
+            <div id="rwSelInfo" class="info-body">在左侧点击某宏块字节块，将在此显示，并可在「④ 帧预览」高亮。</div>
+            <button id="rwGotoPreview" class="link" hidden>→ 在帧预览中高亮该宏块</button>
+          </div>
+          <div class="pv-panel">
+            <div class="pv-panel-hd">分段列表</div>
+            <div id="rwSegList" class="seg-list"></div>
+          </div>
+        </aside>
+      </div>
+    </div>
+    <div id="rwMsg" class="msg"></div>
+  </section>
 </main>
 
 <script src="/static/chart.js"></script>
 <script src="/static/preview.js"></script>
+<script src="/static/rawview.js"></script>
 <script src="/static/app.js"></script>
 </body>
 </html>

@@ -39,6 +39,8 @@
         if (t.dataset.tab === "syntax" && state.project && !state.syntax) loadSyntax();
         if (t.dataset.tab === "preview" && state.project && !Preview.isLoaded())
           Preview.load(state.project.id, state.project.codec);
+        if (t.dataset.tab === "raw" && state.project && !RawView.isLoaded())
+          RawView.load(state.project.id, state.project.codec);
       });
     });
   }
@@ -107,11 +109,11 @@
     renderProjInfo();
     enableTab("bitrate");
     if (proj.codec === "h264") {
-      enableTab("syntax"); enableTab("preview");
-      setMsg("#setupMsg", "工程已建立：可查看「② 码率分析」「③ 语法解析」「④ 帧预览」", "ok");
+      enableTab("syntax"); enableTab("preview"); enableTab("raw");
+      setMsg("#setupMsg", "工程已建立：可查看「②码率」「③语法」「④帧预览」「⑤原始数据」", "ok");
     } else {
-      disableTab("syntax"); disableTab("preview");
-      setMsg("#setupMsg", "工程已建立，查看「② 码率分析」。（③④当前仅支持 H.264，H.265 待 P5）", "ok");
+      disableTab("syntax"); disableTab("preview"); disableTab("raw");
+      setMsg("#setupMsg", "工程已建立，查看「② 码率分析」。（③④⑤当前仅支持 H.264，H.265 待 P5）", "ok");
     }
   }
 
@@ -467,6 +469,7 @@
     $("#synSearch").addEventListener("input", applySynSearch);
     $("#synShowMbs").addEventListener("change", function () { if (state.synFrame) renderFrameSyntax(); });
     Preview.init();
+    RawView.init();
     window.addEventListener("resize", function () { if (chart && state.bitrate) chart.draw(); });
   }
 

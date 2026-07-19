@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import bitrate, config, overlay, preview, project, syntax
+from . import bitrate, config, overlay, preview, project, rawmap, syntax
 from .decoder import DecodeError
 
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
@@ -198,9 +198,41 @@ def api_refgraph(project_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ---------------- 原始数据分段 (P4) ----------------
+@app.get("/api/project/{project_id}/frame/{decode_index}/rawmap")
+def api_frame_rawmap(project_id: str, decode_index: int, hexdata: bool = True,
+                     max_bytes: int = 262144):
+    """按解码序取某帧原始数据分段(起始码/Header/宏块) + 可选 hex 数据。
+
+    hexdata=true 时附带该帧字节的十六进制字符串(上限 max_bytes，超出则截断标注)。
+    """
+    try:
+        rm = rawmap.build_frame_rawmap(project_id, decode_index)
+        if hexdata:
+            start, end = rm["byte_start"], rm["byte_end"]
+            truncated = False
+            if end - start > max_bytes:
+                end = start + max_bytes
+                truncated = True
+            data = rawmap.read_bytes_range(project_id, start, end)
+            rm["hex"] = data.hex()
+            rm["hex_base"] = start
+            rm["hex_len"] = len(data)
+            rm["hex_truncated"] = truncated
+        return rm
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except IndexError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except DecodeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except (RuntimeError, OSError) as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/health")
 def api_health():
-    return {"status": "ok", "phase": "P3"}
+    return {"status": "ok", "phase": "P4"}
 
 
 # ---------------- 静态前端 ----------------
