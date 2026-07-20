@@ -6,11 +6,10 @@
 在浏览器里查看码率曲线、逐帧逐宏块语法、预测块划分/运动矢量/参考关系叠加、原始字节分段——
 把参考解码器的深度信息可视化出来，用于码流调试、教学与算法分析。
 
-> **当前进度：P4 已完成** —— 在 P1~P3 基础上，新增
-> ⑤ **H.264 原始数据分段与联动**：逐帧十六进制视图，按 **起始码 / NAL 头 / 参数集 / 片头 / 各宏块**
-> 分段着色；点击宏块字节块 ↔ 「④ 帧预览」中高亮该宏块（**双向联动**）。
-> CAVLC 宏块字节精确，CABAC 为近似（算术编码不按 bit 对齐，已标注）。
-> 路线图见文末，后续 P5 实现 HEVC CU 级分析。
+> **当前进度：P5 已完成（全部五项需求 H.264/H.265 均已实现）** —— 在 P1~P4 基础上，
+> 新增 **H.265/HEVC 全链路**：语法解析（VPS/SPS/PPS/Slice + CU 级）、帧预览叠加
+> （CTU 四叉树 / CU / PU 分割分类配色、MV、QP、参考关系）、原始数据 NAL 级分段。
+> HEVC 依赖一个**重编译版 HM 分析器**（见 `hm_patch/`，启用 CU dump + trace）。
 
 ---
 
@@ -36,10 +35,10 @@
 |---|---|---|
 | 1 | 设置 FFmpeg / JM / HM 路径；输入裸码流或封装视频(自动解封装为 Annex-B) | ✅ P1 |
 | 2 | 逐帧 / 逐秒码率曲线 + 按 GOP 平均码率与波动指标 | ✅ P1 |
-| 3 | 码流语法解析：每字段中英文名 + 数值含义，按帧排列 | ✅ P2 (H.264) |
-| 4 | 逐帧预览 + 叠加绘制：宏块及各类细分子块配色、MV、参考方向、QP、帧内/帧间参考关系 | ✅ P3 (H.264) |
-| 5 | 原始数据按起始码/Header/宏块分段；点击宏块在预览图高亮(双向联动) | ✅ P4 (H.264) |
-| — | H.265/HEVC CU 级深度解析 | ⏳ P5 |
+| 3 | 码流语法解析：每字段中英文名 + 数值含义，按帧排列 | ✅ P2 (H.264) · P5 (HEVC) |
+| 4 | 逐帧预览 + 叠加绘制：宏块及各类细分子块配色、MV、参考方向、QP、帧内/帧间参考关系 | ✅ P3 (H.264) · P5 (HEVC) |
+| 5 | 原始数据按起始码/Header/宏块分段；点击宏块在预览图高亮(双向联动) | ✅ P4 (H.264) · P5 (HEVC NAL级) |
+| — | H.265/HEVC CU 级深度解析（CTU 四叉树/CU/PU/QP/MV/参考） | ✅ P5 |
 
 ---
 
@@ -86,17 +85,21 @@ make -C ldecod          # 生成 bin/ldecod.exe
 > 说明：JM 解码器的 `TRACE` 在源码 `ldecod/inc/defines.h` 中默认开启（`#define TRACE 1`），
 > 运行时会自动生成含**逐宏块语法**的 `trace_dec.txt`，这是 P2 语法解析的数据来源，无需额外改动。
 
-### 3) HM —— H.265 参考解码器/分析器（P5 需要）
+### 3) HM —— H.265 参考解码器/分析器（HEVC 分析需要）
+
+HEVC 分析需要一个**重编译版** HM 分析器：在官方 HM 源码上启用 `ENC_DEC_TRACE=1`
+（输出头部 trace）+ `HM_CU_DUMP=1` 与一处 `TDecCu.cpp` 补丁（输出逐 CU 数据）。
+仓库内已附一键构建脚本：
 
 ```bash
 # 官方仓库：https://vcgit.hhi.fraunhofer.de/jvet/HM
-cd HM/build/linux && make      # 生成 bin/TAppDecoderAnalyserStatic 等
-./bin/TAppDecoderAnalyserStatic # 验证
+./hm_patch/build_hm_analyser.sh /path/to/HM   # 打补丁 + 加编译宏 + 重编译(幂等)
+# 产出 HM/bin/TAppDecoderAnalyserStatic，把它填到设置页的 hm_analyser
 ```
 
-> HEVC **CU 级完整语法**需要在编译时开启 `ENC_DEC_TRACE=1`
-> （编辑 `HM/build/linux/lib/TLibDecoderAnalyser/makefile` 的 `DEFS` 追加 `-DENC_DEC_TRACE=1` 后重新 `make`）。
-> 该步骤仅 P5 用到，P1–P4 不需要。
+细节见 [`hm_patch/README.md`](hm_patch/README.md)。
+> 官方 stock 分析器不含 CU dump；用它跑 HEVC 时工具会提示需换重编译版。
+> 该步骤仅 HEVC 分析用到；纯 H.264 使用不需要 HM。
 
 ### 路径自动发现
 
@@ -254,13 +257,24 @@ h26x-assistant/
 │   ├── overlay.py      每帧叠加数据：分割/QP/MV/帧内方向/帧间参考
 │   ├── nal_bytes.py    Annex-B 起始码/NAL 字节区间扫描
 │   ├── rawmap.py       每帧原始数据分段(起始码/Header/宏块字节区间)
+│   ├── hm_decoder.py   HM 解码驱动(HEVC): 生成 trace/cu_dump/参考列表
+│   ├── hm_trace_parser.py  解析 HM TraceDec.txt → VPS/SPS/PPS/Slice 头
+│   ├── hm_cu.py        解析 cu_dump.csv → 按解码序切段的逐 CU 数据
+│   ├── hevc_syntax.py  HEVC 语法业务层(平行于 syntax.py)
+│   ├── hevc_overlay.py HEVC 叠加: CTU/CU/PU 几何 + QP/MV/参考
+│   ├── hevc_rawmap.py  HEVC 原始数据 NAL 级分段(2字节 NAL 头)
 │   └── data/
-│       └── syntax_dict_h264.json  H.264 语法元素中英文名/含义/章节字典
+│       ├── syntax_dict_h264.json  H.264 语法元素中英文名/含义/章节字典
+│       └── syntax_dict_h265.json  H.265 语法元素中英文名/含义/章节字典
+├── hm_patch/           HEVC 分析用的 HM 重编译补丁与一键脚本
+│   ├── TDecCu_cu_dump.patch     逐 CU dump 源码补丁
+│   ├── build_hm_analyser.sh     打补丁 + 加宏 + 重编译
+│   └── README.md
 ├── web/                前端(纯静态，无构建，无第三方依赖)
 │   ├── index.html
 │   ├── style.css
 │   ├── chart.js        自研 Canvas 折线/阶梯图(替代 ECharts，离线可用)
-│   ├── preview.js      帧预览 + 分层 Canvas 叠加渲染
+│   ├── preview.js      帧预览 + 分层 Canvas 叠加渲染(H.264/HEVC)
 │   ├── rawview.js      原始数据 hex 视图 + 宏块↔预览双向联动
 │   └── app.js
 ├── requirements.txt
@@ -276,7 +290,7 @@ h26x-assistant/
 - **P2（已完成）** H.264 逐帧逐宏块语法解析：解析 JM `trace_dec.txt` → 统一 JSON，每字段附中英文名、bit 位置、二进制、数值、含义与标准章节。前端帧列表 + 可折叠语法树 + 字段搜索。
 - **P3（已完成）** 帧预览 + 分层叠加：宏块及各类细分子块（帧内 4×4/8×8/16×16、帧间各分割及子分割、Skip/Direct/PCM）**分类配色**、运动矢量、帧内预测方向、QP 热力、帧间参考关系。宏块分割由 mb_type/sub_mb_type 经 H.264 标准表确定性还原（子块拼接零间隙已验证）。
 - **P4（已完成）** 原始数据按起始码/Header/宏块分段显示（hex 视图着色）；点击宏块 ↔ 预览图高亮双向联动。CAVLC 精确、CABAC 近似（已标注）。
-- **P5** H.265/HEVC CU 级（CTU 四叉树、PU 分割、TU/RQT），接入同一前端。
+- **P5（已完成）** H.265/HEVC 全链路：语法(VPS/SPS/PPS/Slice + CU) · 帧预览(CTU 四叉树/CU/PU 分割配色/MV/QP/参考) · 原始数据 NAL 级分段。基于重编译版 HM 分析器(CU dump + trace，见 `hm_patch/`)。参考关系用 HM 输出的精确 L0/L1 列表。
 
 ---
 

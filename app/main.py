@@ -10,8 +10,23 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import bitrate, config, overlay, preview, project, rawmap, syntax
+from . import (bitrate, config, hevc_overlay, hevc_rawmap, hevc_syntax, overlay,
+               preview, project, rawmap, syntax)
 from .decoder import DecodeError
+from .hm_decoder import HMDecodeError
+
+
+def _codec_of(project_id: str) -> str:
+    return project.get_project(project_id).get("codec", "")
+
+
+# 按 codec 分派语法模块(h264→syntax/JM, hevc→hevc_syntax/HM)
+def _syntax_mod(project_id: str):
+    return hevc_syntax if _codec_of(project_id) == "hevc" else syntax
+
+
+def _overlay_mod(project_id: str):
+    return hevc_overlay if _codec_of(project_id) == "hevc" else overlay
 
 WEB_DIR = Path(__file__).resolve().parents[1] / "web"
 
@@ -115,15 +130,15 @@ def api_bitrate(project_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ---------------- 语法解析 (P2) ----------------
+# ---------------- 语法解析 (P2 H.264 / P5 HEVC) ----------------
 @app.get("/api/project/{project_id}/syntax")
 def api_syntax_overview(project_id: str):
-    """帧列表总览(触发解码+解析，惰性缓存)。"""
+    """帧列表总览(触发解码+解析，惰性缓存)。按 codec 分派 JM/HM。"""
     try:
-        return syntax.syntax_overview(project_id)
+        return _syntax_mod(project_id).syntax_overview(project_id)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except DecodeError as e:
+    except (DecodeError, HMDecodeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     except (RuntimeError, OSError) as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -131,14 +146,14 @@ def api_syntax_overview(project_id: str):
 
 @app.get("/api/project/{project_id}/frame/{index}/syntax")
 def api_frame_syntax(project_id: str, index: int, mbs: bool = True):
-    """单帧完整语法树(NAL 字段 + 宏块字段)。mbs=false 可省略宏块。"""
+    """单帧完整语法树(NAL 字段 + 宏块/CU 字段)。mbs=false 可省略。"""
     try:
-        return syntax.frame_syntax(project_id, index, include_mbs=mbs)
+        return _syntax_mod(project_id).frame_syntax(project_id, index, include_mbs=mbs)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except IndexError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except DecodeError as e:
+    except (DecodeError, HMDecodeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     except (RuntimeError, OSError) as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -172,14 +187,14 @@ def api_frame_image(project_id: str, display_index: int):
 
 @app.get("/api/project/{project_id}/frame/{decode_index}/overlay")
 def api_frame_overlay(project_id: str, decode_index: int):
-    """按解码序取某帧叠加数据(分割/QP/MV/子块配色)。"""
+    """按解码序取某帧叠加数据(分割/QP/MV/子块配色)。按 codec 分派。"""
     try:
-        return overlay.build_frame_overlay(project_id, decode_index)
+        return _overlay_mod(project_id).build_frame_overlay(project_id, decode_index)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except IndexError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except DecodeError as e:
+    except (DecodeError, HMDecodeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     except (RuntimeError, OSError) as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -187,34 +202,40 @@ def api_frame_overlay(project_id: str, decode_index: int):
 
 @app.get("/api/project/{project_id}/refgraph")
 def api_refgraph(project_id: str):
-    """帧间参考关系图。"""
+    """帧间参考关系图。按 codec 分派。"""
     try:
-        return overlay.build_reference_graph(project_id)
+        return _overlay_mod(project_id).build_reference_graph(project_id)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except DecodeError as e:
+    except (DecodeError, HMDecodeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     except (RuntimeError, OSError) as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# ---------------- 原始数据分段 (P4) ----------------
+# ---------------- 原始数据分段 (P4 H.264 / P5 HEVC NAL级) ----------------
+def _rawmap_mod(project_id: str):
+    return hevc_rawmap if _codec_of(project_id) == "hevc" else rawmap
+
+
 @app.get("/api/project/{project_id}/frame/{decode_index}/rawmap")
 def api_frame_rawmap(project_id: str, decode_index: int, hexdata: bool = True,
                      max_bytes: int = 262144):
-    """按解码序取某帧原始数据分段(起始码/Header/宏块) + 可选 hex 数据。
+    """按解码序取某帧原始数据分段 + 可选 hex 数据。
 
-    hexdata=true 时附带该帧字节的十六进制字符串(上限 max_bytes，超出则截断标注)。
+    H.264: 起始码/Header/参数集/片头/各宏块(CAVLC精确/CABAC近似)。
+    HEVC:  起始码/NAL头(2字节)/参数集/片数据/SEI (NAL级精确，无 CU 级映射)。
     """
+    mod = _rawmap_mod(project_id)
     try:
-        rm = rawmap.build_frame_rawmap(project_id, decode_index)
+        rm = mod.build_frame_rawmap(project_id, decode_index)
         if hexdata:
             start, end = rm["byte_start"], rm["byte_end"]
             truncated = False
             if end - start > max_bytes:
                 end = start + max_bytes
                 truncated = True
-            data = rawmap.read_bytes_range(project_id, start, end)
+            data = mod.read_bytes_range(project_id, start, end)
             rm["hex"] = data.hex()
             rm["hex_base"] = start
             rm["hex_len"] = len(data)
@@ -224,7 +245,7 @@ def api_frame_rawmap(project_id: str, decode_index: int, hexdata: bool = True,
         raise HTTPException(status_code=404, detail=str(e))
     except IndexError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except DecodeError as e:
+    except (DecodeError, HMDecodeError) as e:
         raise HTTPException(status_code=400, detail=str(e))
     except (RuntimeError, OSError) as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -232,7 +253,7 @@ def api_frame_rawmap(project_id: str, decode_index: int, hexdata: bool = True,
 
 @app.get("/api/health")
 def api_health():
-    return {"status": "ok", "phase": "P4"}
+    return {"status": "ok", "phase": "P5"}
 
 
 # ---------------- 静态前端 ----------------

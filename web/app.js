@@ -111,9 +111,12 @@
     if (proj.codec === "h264") {
       enableTab("syntax"); enableTab("preview"); enableTab("raw");
       setMsg("#setupMsg", "工程已建立：可查看「②码率」「③语法」「④帧预览」「⑤原始数据」", "ok");
+    } else if (proj.codec === "hevc") {
+      enableTab("syntax"); enableTab("preview"); enableTab("raw");
+      setMsg("#setupMsg", "工程已建立：可查看「②码率」「③语法」「④帧预览」「⑤原始数据(NAL级)」", "ok");
     } else {
       disableTab("syntax"); disableTab("preview"); disableTab("raw");
-      setMsg("#setupMsg", "工程已建立，查看「② 码率分析」。（③④⑤当前仅支持 H.264，H.265 待 P5）", "ok");
+      setMsg("#setupMsg", "工程已建立，查看「② 码率分析」。", "ok");
     }
   }
 
@@ -299,9 +302,11 @@
 
   /* ---------- 语法解析 (③) ---------- */
   async function loadSyntax() {
-    if (!state.project || state.project.codec !== "h264") return;
+    if (!state.project) return;
+    var isH264 = state.project.codec === "h264";
+    if (state.project.codec !== "h264" && state.project.codec !== "hevc") return;
     $("#synNeedProj").hidden = true;
-    setMsg("#synMsg", "正在调用 JM 解码器解析语法（首次较慢，稍候）…", "");
+    setMsg("#synMsg", "正在调用 " + (isH264 ? "JM" : "HM") + " 解码器解析语法（首次较慢，稍候）…", "");
     try {
       state.syntax = await api("/api/project/" + state.project.id + "/syntax");
       $("#synMain").hidden = false;
@@ -390,13 +395,20 @@
         "<div class='mb-grid-hd'>（该 NAL 无逐字段 trace，如 SEI 负载）</div>";
       html += group(n.name_en, n.name_zh, "NAL", meta, body, i === 0 || n.is_slice);
     });
-    // 宏块分组(可折叠，默认收起以防过大)
+    // 宏块/CU 分组(可折叠，默认收起以防过大)
     if (showMbs && fr.macroblocks) {
-      fr.macroblocks.forEach(function (mb) {
-        const meta = "type " + mb.type_code + " · " + mb.fields.length + " 字段 · " +
-          mb.num_residual_coeffs + " 残差";
-        html += group("MB " + mb.mb_index, "宏块 " + mb.mb_index,
-          mb.slice_kind, meta, fieldRows(mb.fields), false);
+      var isCU = fr.macroblocks.length && fr.macroblocks[0].mb_index == null;
+      fr.macroblocks.forEach(function (mb, i) {
+        if (isCU) {
+          var title = "CU (" + mb.cu_x + "," + mb.cu_y + ") " + mb.cu_size + "×" + mb.cu_size;
+          html += group(title, "", mb.slice_kind, mb.fields.length + " 字段",
+            fieldRows(mb.fields), false);
+        } else {
+          const meta = "type " + mb.type_code + " · " + mb.fields.length + " 字段 · " +
+            mb.num_residual_coeffs + " 残差";
+          html += group("MB " + mb.mb_index, "宏块 " + mb.mb_index,
+            mb.slice_kind, meta, fieldRows(mb.fields), false);
+        }
       });
     }
     const box = $("#synContent"); box.innerHTML = html;

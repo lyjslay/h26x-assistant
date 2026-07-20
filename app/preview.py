@@ -28,15 +28,28 @@ def _is_idr(frame: Dict) -> bool:
 def build_frame_map(project_id: str, cfg=None) -> Dict[str, object]:
     """建立显示序映射。返回 {display: [ {display_index, decode_index, poc, slice_type} ], ...}。
 
-    需要 trace 解析结果(解码序 + poc + 每帧 NAL 用于判 IDR)。
+    H.264 用 JM trace 解析结果；HEVC 用 HM stdout 帧列表。均为解码序 + poc。
     """
-    parsed = syntax._ensure_parsed(project_id, cfg=cfg)  # noqa: SLF001 复用缓存
-    dec_frames = parsed["frames"]
+    meta = project.get_project(project_id)
+    if meta.get("codec") == "hevc":
+        from . import hevc_syntax
+        data = hevc_syntax._ensure(project_id, cfg=cfg)  # noqa: SLF001
+        # HEVC 帧含 poc + slice_type；IDR 判定：I 片且无参考
+        dec_frames = [{
+            "index": f["index"], "poc": f["poc"], "slice_type": f["slice_type"],
+            "frame_num": None,
+            "_is_idr": f["slice_type"] == "I" and not f["ref_l0"] and not f["ref_l1"],
+        } for f in data["frames"]]
+        is_idr = lambda fr: fr.get("_is_idr", False)  # noqa: E731
+    else:
+        parsed = syntax._ensure_parsed(project_id, cfg=cfg)  # noqa: SLF001 复用缓存
+        dec_frames = parsed["frames"]
+        is_idr = _is_idr
 
-    # 分段：以 IDR(nal_type 5) 或首帧起新段
+    # 分段：以 IDR 或首帧起新段
     segments: List[List[int]] = []
     for i, fr in enumerate(dec_frames):
-        if i == 0 or _is_idr(fr):
+        if i == 0 or is_idr(fr):
             segments.append([i])
         else:
             segments[-1].append(i)

@@ -25,10 +25,10 @@
 
   async function load(projectId, codec) {
     st.pid = projectId; st.codec = codec;
-    if (codec !== "h264") {
+    if (codec !== "h264" && codec !== "hevc") {
       $("rwNeedProj").hidden = false; $("rwMain").hidden = true;
       $("rwNeedProj").innerHTML = "当前为 " + (codec || "").toUpperCase() +
-        " 码流，原始数据分段暂仅支持 H.264（H.265 待 P5）";
+        " 码流，原始数据分段暂不支持";
       return;
     }
     $("rwNeedProj").hidden = true; $("rwMain").hidden = false;
@@ -56,17 +56,25 @@
 
   function render() {
     var d = st.rawmap;
+    var isHevc = (st.codec === "hevc");
     $("rwFrameLabel").textContent =
       "解码帧 " + d.decode_index + " / " + (st.numFrames - 1) +
-      "  ·  " + d.slice_type + "  ·  POC " + d.poc;
-    $("rwMapNote").textContent = d.entropy.toUpperCase() +
-      (d.mb_mapping === "approx"
-        ? " · 宏块字节为近似(CABAC 算术编码不按 bit 对齐)"
-        : " · 宏块字节精确(CAVLC)");
+      (d.slice_type ? "  ·  " + d.slice_type : "") +
+      (d.poc != null ? "  ·  POC " + d.poc : "");
+    if (isHevc) {
+      $("rwMapNote").textContent = "HEVC · NAL/头部级字节精确；HM 的 CU 无 bit 位置，不提供 CU 级字节映射";
+    } else {
+      $("rwMapNote").textContent = d.entropy.toUpperCase() +
+        (d.mb_mapping === "approx"
+          ? " · 宏块字节为近似(CABAC 算术编码不按 bit 对齐)"
+          : " · 宏块字节精确(CAVLC)");
+    }
     buildByteIndex();
     renderHex();
     renderSegList();
-    $("rwSelInfo").innerHTML = "在左侧点击某宏块字节块，将在此显示，并可在「④ 帧预览」高亮。";
+    $("rwSelInfo").innerHTML = isHevc
+      ? "HEVC 按 NAL/头部分段。CU 级字节映射与宏块联动暂不可用（HM CABAC 无 bit 位置）。"
+      : "在左侧点击某宏块字节块，将在此显示，并可在「④ 帧预览」高亮。";
     $("rwGotoPreview").hidden = true;
   }
 
@@ -96,6 +104,7 @@
       case "param_set": return "param_set";
       case "sei": return "sei";
       case "slice_header": return "slice_header";
+      case "slice_payload": return "mb0";
       case "mb": return seg._mbparity ? "mb1" : "mb0";
       default: return "";
     }

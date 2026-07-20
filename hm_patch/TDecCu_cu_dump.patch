@@ -1,0 +1,68 @@
+diff --git a/source/Lib/TLibDecoder/TDecCu.cpp b/source/Lib/TLibDecoder/TDecCu.cpp
+index be1f6305..ebcc00be 100644
+--- a/source/Lib/TLibDecoder/TDecCu.cpp
++++ b/source/Lib/TLibDecoder/TDecCu.cpp
+@@ -42,6 +42,52 @@
+ //! \ingroup TLibDecoder
+ //! \{
+ 
++#if HM_CU_DUMP
++// ==== 码流分析工具: 逐 CU 数据 dump (供 streamtool P5 HEVC 可视化) ====
++// 每个叶子 CU 输出一行 CSV 到 cu_dump.csv(cwd), 字段:
++//   poc,ctu,x,y,size,depth,predMode(0=inter 1=intra 2=none),
++//   partSize,qp,intraDirY,interDir,mvL0x,mvL0y,refL0,mvL1x,mvL1y,refL1
++#include <cstdio>
++static FILE* g_hmCuDump = NULL;
++static Int   g_hmCuDumpLastPoc = 0x7fffffff;
++
++Void hmCuDumpLeaf( TComDataCU* pcCU, UInt uiAbsPartIdx, UInt uiDepth )
++{
++  if( g_hmCuDump == NULL )
++  {
++    g_hmCuDump = fopen( "cu_dump.csv", "w" );
++    if( g_hmCuDump == NULL ) return;
++    fprintf( g_hmCuDump, "poc,ctu,x,y,size,depth,predMode,partSize,qp,"
++                         "intraDirY,interDir,mvL0x,mvL0y,refL0,mvL1x,mvL1y,refL1\n" );
++  }
++  const TComSlice* pcSlice = pcCU->getSlice();
++  const Int poc  = pcSlice->getPOC();
++  const UInt maxCuW = pcCU->getSlice()->getSPS()->getMaxCUWidth();
++  const UInt size = maxCuW >> uiDepth;
++  const UInt x = pcCU->getCUPelX() + g_auiRasterToPelX[ g_auiZscanToRaster[uiAbsPartIdx] ];
++  const UInt y = pcCU->getCUPelY() + g_auiRasterToPelY[ g_auiZscanToRaster[uiAbsPartIdx] ];
++  const Int predMode = (Int)pcCU->getPredictionMode( uiAbsPartIdx ); // MODE_INTER=0,MODE_INTRA=1,NONE=2
++  const Int partSize = (Int)pcCU->getPartitionSize( uiAbsPartIdx );
++  const Int qp = pcCU->getQP( uiAbsPartIdx );
++  Int intraDir = pcCU->isIntra( uiAbsPartIdx ) ? (Int)pcCU->getIntraDir( CHANNEL_TYPE_LUMA, uiAbsPartIdx ) : -1;
++  Int interDir = pcCU->isInter( uiAbsPartIdx ) ? (Int)pcCU->getInterDir( uiAbsPartIdx ) : 0;
++  TComMv mv0(0,0), mv1(0,0); Int ref0 = -1, ref1 = -1;
++  if( pcCU->isInter( uiAbsPartIdx ) )
++  {
++    const TComCUMvField* mf0 = pcCU->getCUMvField( REF_PIC_LIST_0 );
++    const TComCUMvField* mf1 = pcCU->getCUMvField( REF_PIC_LIST_1 );
++    if( interDir & 1 ) { mv0 = mf0->getMv( uiAbsPartIdx ); ref0 = mf0->getRefIdx( uiAbsPartIdx ); }
++    if( interDir & 2 ) { mv1 = mf1->getMv( uiAbsPartIdx ); ref1 = mf1->getRefIdx( uiAbsPartIdx ); }
++  }
++  fprintf( g_hmCuDump, "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
++           poc, (Int)pcCU->getCtuRsAddr(), (Int)x, (Int)y, (Int)size, (Int)uiDepth,
++           predMode, partSize, qp, intraDir, interDir,
++           mv0.getHor(), mv0.getVer(), ref0, mv1.getHor(), mv1.getVer(), ref1 );
++  if( poc != g_hmCuDumpLastPoc ) { g_hmCuDumpLastPoc = poc; }
++  fflush( g_hmCuDump );
++}
++#endif
++
+ // ====================================================================================================================
+ // Constructor / destructor / create / destroy
+ // ====================================================================================================================
+@@ -337,6 +383,10 @@ Void TDecCu::xFinishDecodeCU( TComDataCU* pcCU, UInt uiAbsPartIdx, UInt uiDepth,
+     pcCU->setChromaQpAdjSubParts( pcCU->getCodedChromaQpAdj(), uiAbsPartIdx, uiDepth ); // set QP
+   }
+ 
++#if HM_CU_DUMP
++  hmCuDumpLeaf( pcCU, uiAbsPartIdx, uiDepth );
++#endif
++
+   isLastCtuOfSliceSegment = xDecodeSliceEnd( pcCU, uiAbsPartIdx );
+ }
+ 

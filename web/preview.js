@@ -21,6 +21,10 @@
     skip:       "#576574",
     direct:     "#a55eea",
     unknown:    "#8395a7",
+    // HEVC CU 类型
+    intra_cu:   "#ff6b6b",
+    inter_cu:   "#54a0ff",
+    skip_cu:    "#576574",
   };
   var KIND_LABEL = {
     intra_4x4: "帧内 4×4", intra_8x8: "帧内 8×8", intra_16x16: "帧内 16×16",
@@ -28,6 +32,7 @@
     inter_8x16: "帧间 8×16", inter_8x8: "帧间 8×8", inter_8x4: "帧间 8×4",
     inter_4x8: "帧间 4×8", inter_4x4: "帧间 4×4", skip: "Skip",
     direct: "B-Direct", unknown: "未知",
+    intra_cu: "帧内 CU", inter_cu: "帧间 CU", skip_cu: "Skip CU",
   };
   var PRED_COLORS = { L0: "#00e5ff", L1: "#ff4081", Bi: "#ffea00", Direct: "#b388ff" };
 
@@ -56,10 +61,10 @@
   async function load(projectId, codec) {
     st.pid = projectId;
     st.overlayCache = {};
-    if (codec !== "h264") {
+    if (codec !== "h264" && codec !== "hevc") {
       $("pvNeedProj").hidden = false; $("pvMain").hidden = true;
       $("pvNeedProj").innerHTML = "当前为 " + (codec || "").toUpperCase() +
-        " 码流，帧预览暂仅支持 H.264（H.265 待 P5）";
+        " 码流，帧预览暂不支持";
       return;
     }
     $("pvNeedProj").hidden = true; $("pvMain").hidden = false;

@@ -35,7 +35,7 @@
 | P2 | 需求3 H.264 逐帧逐宏块语法解析(JM trace→JSON)+中英文字典 | JM stock | ✅ 已完成 |
 | P3 | 需求4 帧预览+**子块级**分割/QP/MV/参考关系叠加 | ffmpeg 出帧 + P2 数据 | ✅ 已完成 |
 | P4 | 需求5 原始数据分段 + hex↔预览双向高亮联动 | P2 的 bit offset | ✅ 已完成 |
-| P5 | H.265/HM 全语法(重编译 ENC_DEC_TRACE=1)接同一链路 | HM 重编译 | 中 |
+| P5 | H.265/HM 全语法(重编译 ENC_DEC_TRACE=1)接同一链路 | HM 重编译 | ✅ 已完成 |
 
 ---
 
@@ -128,7 +128,29 @@
 - preview.js 增 `highlightMb()`(经 framemap.decode_to_display 切到对应显示帧再高亮) 与预览 click→通知 RawView。
 - **已验证**：起始码字节=00000001；CAVLC exact/CABAC approx 标注正确；overlay↔rawmap 宏块索引一致(99/99)；全回归通过。
 
+## 6e. P5 交付物 (2026-07-19 完成) —— HEVC 全链路
+
+**HM 重编译(唯一编译步)**：`streamtool/hm_patch/build_hm_analyser.sh <HM根>` 幂等完成：
+- 打 `TDecCu_cu_dump.patch`(在 `xFinishDecodeCU` 每叶子 CU dump 一行到 `cu_dump.csv`)。
+- 给 3 个 makefile DEFS 加 `-DENC_DEC_TRACE=1 -DHM_CU_DUMP=1`。**关键坑**：`g_hTrace/g_nSymbolCounter` 在 `TLibCommon/TComRom.cpp` 的 `#if ENC_DEC_TRACE` 下，故 **TLibCommon 也必须重编**(只加 ENC_DEC_TRACE)，否则链接报 undefined reference。重编顺序 TLibCommon→TLibDecoderAnalyser→TAppDecoderAnalyser。
+- cu_dump 列：`poc,ctu,x,y,size,depth,predMode(0inter/1intra/2none),partSize(0-7),qp,intraDirY,interDir(1L0/2L1/3Bi),mvL0x/y,refL0,mvL1x/y,refL1`。
+
+**三份数据源**(HM 一次运行 `-b in.265 -o out.yuv` 全产出，落工程 cwd)：
+- `hm_stdout.txt`：每 POC 摘要 `POC n (X-SLICE, QP q) [L0 ..][L1 ..]` → 帧列表(解码序)+**精确参考列表**(比 H.264 的近似强)。
+- `TraceDec.txt`：VPS/SPS/PPS/Slice 头逐字段(格式 `<bit> <名> <descriptor> : <值>`，段标题 `===== X =====`)。HM 无 CU 结构 trace(CABAC)。
+- `cu_dump.csv`：逐叶子 CU 精确几何/QP/预测/MV。
+
+**代码**：`hm_decoder.py`(驱动+stdout解析) `hm_trace_parser.py`(头) `hm_cu.py`(CU) `hevc_syntax.py` `hevc_overlay.py` `hevc_rawmap.py` + `data/syntax_dict_h265.json`。main.py 按 codec 分派(`_syntax_mod/_overlay_mod/_rawmap_mod`)。前端 preview.js/rawview.js/app.js 放开 h264-only 限制、加 HEVC 配色与说明。
+
+**关键坑/事实**：
+- **cu_dump 必须按解码序切段，不能按 POC 分组**！多 GOP 时 POC 每个 IDR 重置为 0，按值分组会把 N 个 POC=0 的帧合并(实测 1440p 帧0 变 539K CU)。`hm_cu.parse_cu_dump_segments` 按相邻 POC 变化切段(CU 行按解码序连续写)。
+- HEVC slice_type: **0=B 1=P 2=I**(与 H.264 相反)。
+- HEVC NAL 头 **2 字节**，type=(byte0>>1)&0x3F(H.264 是 1 字节 &0x1F)。
+- HEVC 原始数据只到 **NAL 级字节精确**(无 CU 级字节映射：CABAC + cu_dump 无 bit 位置)，故 ⑤ 页 HEVC 无 CU↔预览联动，已标注。
+- HEVC 帧图像仍用 ffmpeg 从裸流按显示序抽(preview.py framemap 已支持 hevc 分支，按 IDR 分段+POC 排序)。
+- **已验证**：小流(6帧)+真实 1440p(282帧,22 IDR) 全链路;PU 拼满 CU 零间隙;两 codec 所有端点 200;QP/参考列表对齐 HM 日志。
+
 ## 7. 待办 / 下一步
-- [ ] **P5(下一步)**：需求 H.265/HEVC CU 级分析——重编译 HM `TLibDecoderAnalyser` 加 `-DENC_DEC_TRACE=1`(改 `HM/build/linux/lib/TLibDecoderAnalyser/makefile` DEFS)，解析 HM DTRACE → 接同一 JSON schema。CTU 四叉树/PU 分割/TU RQT，配色思路同 P3。等后台调研 agent 的 HM `TComDataCU` 访问器与 CLI 细节。
-- [ ] 需求1~5 的 H.264 全链路已完成(P1-P4)；H.265 仅码率(P1)可用，语法/预览/原始数据待 P5。
-- [ ] P3 的 MV/参考关系是近似(mvd 未做预测重建、参考列表用 POC 邻近推导)；P4 的 CABAC 宏块字节是近似。若需精确可给 JM 打补丁 dump 每 MB 的最终 mv/ref 与精确字节位置，列为后续增强。
+- [x] **五项需求 H.264 + H.265 全部完成(P1-P5)**。
+- [ ] 后续可选增强：H.264 MV 精确重建(mvd→MV 预测)；HEVC TU/RQT 叠加层、SAO/去块可视化；HEVC 原始数据若要 CU 级需再给 HM 打字节位置补丁；多 slice/Tile/WPP 更细处理；性能(1440p 解码~98s，可加进度反馈/后台任务)。
+- [ ] Docker 镜像内自动跑 hm_patch 构建脚本(当前 Dockerfile 示例未含)。
