@@ -188,6 +188,8 @@ tr.hl td { background: #3b2f13 !important; }
 .info-body { font-size: 12.5px; color: #cdd6ea; }
 .info-body .k { color: #7d89a5; display: inline-block; width: 74px; }
 .info-body div { padding: 2px 0; }
+.badge-hevc { font-size: 10px; background: #3b82f6; color: #fff;
+  padding: 0 5px; border-radius: 7px; margin-left: 4px; }
 
 /* ---- 原始数据页 ---- */
 .rw-layout { display: flex; flex-direction: column; height: calc(100vh - 150px); }

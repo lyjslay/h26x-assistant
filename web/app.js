@@ -26,6 +26,34 @@
     return data;
   }
 
+  // 共享：确保工程已解码(启动后台任务 + 轮询进度)。onProgress(state) 回调用于更新 UI。
+  // resolve 于 state==="done"；reject 于 state==="error"。
+  async function ensureDecoded(projectId, onProgress) {
+    var start = await api("/api/project/" + projectId + "/decode", { method: "POST" });
+    if (onProgress) onProgress(start);
+    if (start.state === "done") return start;
+    return new Promise(function (resolve, reject) {
+      var timer = setInterval(async function () {
+        let st;
+        try { st = await api("/api/project/" + projectId + "/decode/status"); }
+        catch (e) { clearInterval(timer); reject(e); return; }
+        if (onProgress) onProgress(st);
+        if (st.state === "done") { clearInterval(timer); resolve(st); }
+        else if (st.state === "error") {
+          clearInterval(timer); reject(new Error(st.error || "解码失败"));
+        }
+      }, 700);
+    });
+  }
+
+  function progressText(st) {
+    if (!st) return "";
+    if (st.state === "done") return "";
+    if (st.total) return "解码中… " + st.done + "/" + st.total + " 帧";
+    if (st.done) return "解码中… " + st.done + " 帧";
+    return st.message || "解码中…";
+  }
+
   /* ---------- Tabs ---------- */
   function initTabs() {
     document.querySelectorAll(".tab").forEach(function (t) {
@@ -306,8 +334,13 @@
     var isH264 = state.project.codec === "h264";
     if (state.project.codec !== "h264" && state.project.codec !== "hevc") return;
     $("#synNeedProj").hidden = true;
-    setMsg("#synMsg", "正在调用 " + (isH264 ? "JM" : "HM") + " 解码器解析语法（首次较慢，稍候）…", "");
     try {
+      // 先后台解码(带进度)，再取语法
+      await ensureDecoded(state.project.id, function (st) {
+        setMsg("#synMsg", "调用 " + (isH264 ? "JM" : "HM") + " 解码器：" +
+          (progressText(st) || "解析中…"), "");
+      });
+      setMsg("#synMsg", "解析语法中…", "");
       state.syntax = await api("/api/project/" + state.project.id + "/syntax");
       $("#synMain").hidden = false;
       renderFrameList();
@@ -484,6 +517,13 @@
     RawView.init();
     window.addEventListener("resize", function () { if (chart && state.bitrate) chart.draw(); });
   }
+
+  // 供 preview.js / rawview.js 复用解码编排
+  window.App = {
+    ensureDecoded: ensureDecoded,
+    progressText: progressText,
+    api: api,
+  };
 
   document.addEventListener("DOMContentLoaded", init);
 })();

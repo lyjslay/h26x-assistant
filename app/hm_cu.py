@@ -43,3 +43,33 @@ def cus_for_decode_index(cu_path: Path, decode_index: int) -> List[Dict]:
     if 0 <= decode_index < len(segs):
         return segs[decode_index]["cus"]
     return []
+
+
+def _parse_segments_generic(csv_path: Path) -> List[Dict]:
+    """通用：按 poc 变化点切段(用于 tu_dump/sao_dump，与 cu_dump 同结构)。"""
+    if not csv_path.exists():
+        return []
+    segments: List[Dict] = []
+    cur_poc = None
+    cur: List[Dict] = None
+    with open(str(csv_path), "r", encoding="utf-8", errors="replace", newline="") as fh:
+        reader = csv.DictReader(fh)
+        for row in reader:
+            try:
+                rec = {k: int(v) for k, v in row.items()}
+            except (ValueError, TypeError):
+                continue
+            if cur is None or rec["poc"] != cur_poc:
+                cur = []
+                cur_poc = rec["poc"]
+                segments.append({"poc": cur_poc, "rows": cur})
+            cur.append(rec)
+    return segments
+
+
+def rows_for_decode_index(csv_path: Path, decode_index: int) -> List[Dict]:
+    """取第 decode_index 段的行(tu_dump/sao_dump 用)。"""
+    segs = _parse_segments_generic(csv_path)
+    if 0 <= decode_index < len(segs):
+        return segs[decode_index]["rows"]
+    return []

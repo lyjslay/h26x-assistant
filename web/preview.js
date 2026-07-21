@@ -40,8 +40,18 @@
     pid: null, framemap: null, refgraph: null,
     dispIndex: 0, overlay: null, imgW: 0, imgH: 0, zoom: 1,
     img: new Image(),
-    layers: { grid: true, qp: false, mv: false, intra: false, ref: false },
-    overlayCache: {}, hlMb: null,
+    layers: { grid: true, qp: false, mv: false, intra: false, ref: false, tu: false, sao: false },
+    overlayCache: {}, hlMb: null, codec: null,
+  };
+
+  // SAO 类型 → 颜色/中文
+  var SAO_COLORS = {
+    off: "#3a4252", eo0: "#4dd0e1", eo90: "#4db6ac",
+    eo135: "#7986cb", eo45: "#9575cd", bo: "#ffb74d", merge: "#a1887f",
+  };
+  var SAO_LABEL = {
+    off: "关闭", eo0: "边缘0°", eo90: "边缘90°", eo135: "边缘135°",
+    eo45: "边缘45°", bo: "带偏移BO", merge: "合并",
   };
 
   function $(id) { return document.getElementById(id); }
@@ -60,7 +70,12 @@
 
   async function load(projectId, codec) {
     st.pid = projectId;
+    st.codec = codec;
     st.overlayCache = {};
+    // HEVC 专属图层(TU/SAO)显隐
+    document.querySelectorAll(".hevc-only").forEach(function (el) {
+      el.hidden = (codec !== "hevc");
+    });
     if (codec !== "h264" && codec !== "hevc") {
       $("pvNeedProj").hidden = false; $("pvMain").hidden = true;
       $("pvNeedProj").innerHTML = "当前为 " + (codec || "").toUpperCase() +
@@ -70,6 +85,11 @@
     $("pvNeedProj").hidden = true; $("pvMain").hidden = false;
     setMsg("正在准备帧映射与图像…");
     try {
+      if (global.App && global.App.ensureDecoded) {
+        await global.App.ensureDecoded(st.pid, function (s) {
+          setMsg(global.App.progressText(s) || "解码中…");
+        });
+      }
       st.framemap = await apiJSON("/api/project/" + st.pid + "/framemap");
       st.refgraph = await apiJSON("/api/project/" + st.pid + "/refgraph");
       st.dispIndex = 0;
@@ -150,11 +170,33 @@
     if (!st.overlay) return;
     var z = st.zoom;
     if (st.layers.qp) drawQpLayer(ctx, z);
+    if (st.layers.sao) drawSaoLayer(ctx, z);
     if (st.layers.grid) drawGridLayer(ctx, z);
+    if (st.layers.tu) drawTuLayer(ctx, z);
     if (st.layers.intra) drawIntraLayer(ctx, z);
     if (st.layers.mv) drawMvLayer(ctx, z);
     if (st.layers.ref) drawRefBadge(ctx, z);
     if (st.hlMb != null) drawHighlight(ctx, z);
+  }
+
+  function drawTuLayer(ctx, z) {
+    if (!st.overlay.tu) return;
+    ctx.strokeStyle = "#ff5252cc"; ctx.lineWidth = 1;
+    ctx.setLineDash([2, 2]);
+    st.overlay.tu.forEach(function (t) {
+      ctx.strokeRect(t.x * z + 0.5, t.y * z + 0.5, t.w * z - 1, t.h * z - 1);
+    });
+    ctx.setLineDash([]);
+  }
+
+  function drawSaoLayer(ctx, z) {
+    if (!st.overlay.sao) return;
+    st.overlay.sao.forEach(function (s) {
+      ctx.fillStyle = hexA(SAO_COLORS[s.kind] || "#3a4252", 0.45);
+      ctx.fillRect(s.x * z, s.y * z, s.size * z, s.size * z);
+      ctx.strokeStyle = "#00000055"; ctx.lineWidth = 1;
+      ctx.strokeRect(s.x * z + 0.5, s.y * z + 0.5, s.size * z, s.size * z);
+    });
   }
 
   function drawHighlight(ctx, z) {
@@ -269,27 +311,39 @@
     ctx.fillText(txt, 8, 7);
   }
 
+  function legendItem(body, color, label) {
+    var item = document.createElement("div"); item.className = "legend-item";
+    var sw = document.createElement("span"); sw.className = "legend-swatch";
+    sw.style.background = color;
+    item.appendChild(sw);
+    item.appendChild(document.createTextNode(label));
+    body.appendChild(item);
+  }
+  function legendSep(body) {
+    var hr = document.createElement("div");
+    hr.style.cssText = "height:1px;background:#263049;margin:6px 0";
+    body.appendChild(hr);
+  }
+
   function renderLegend() {
     var body = $("pvLegendBody"); body.innerHTML = "";
-    Object.keys(KIND_LABEL).forEach(function (k) {
-      var item = document.createElement("div"); item.className = "legend-item";
-      var sw = document.createElement("span"); sw.className = "legend-swatch";
-      sw.style.background = KIND_COLORS[k];
-      item.appendChild(sw);
-      item.appendChild(document.createTextNode(KIND_LABEL[k]));
-      body.appendChild(item);
+    var isHevc = (st.codec === "hevc");
+    // 块类型：按 codec 过滤(HEVC 只列 CU 类；H.264 列宏块子块类)
+    var blockKeys = Object.keys(KIND_LABEL).filter(function (k) {
+      var isCU = (k.indexOf("_cu") >= 0);
+      return isHevc ? isCU : !isCU;
     });
-    // MV 方向配色
-    var hr = document.createElement("div"); hr.style.cssText = "height:1px;background:#263049;margin:6px 0";
-    body.appendChild(hr);
+    blockKeys.forEach(function (k) { legendItem(body, KIND_COLORS[k], KIND_LABEL[k]); });
+    legendSep(body);
     Object.keys(PRED_COLORS).forEach(function (k) {
-      var item = document.createElement("div"); item.className = "legend-item";
-      var sw = document.createElement("span"); sw.className = "legend-swatch";
-      sw.style.background = PRED_COLORS[k];
-      item.appendChild(sw);
-      item.appendChild(document.createTextNode("MV " + k));
-      body.appendChild(item);
+      legendItem(body, PRED_COLORS[k], "MV " + k);
     });
+    if (isHevc) {
+      legendSep(body);
+      Object.keys(SAO_LABEL).forEach(function (k) {
+        legendItem(body, SAO_COLORS[k], "SAO " + SAO_LABEL[k]);
+      });
+    }
   }
 
   function renderInfo() {
@@ -396,7 +450,8 @@
       $("pvZoomVal").textContent = Math.round(st.zoom * 100) + "%";
       resizeCanvases(); drawAll();
     });
-    var map = { lyGrid: "grid", lyQp: "qp", lyMv: "mv", lyIntra: "intra", lyRef: "ref" };
+    var map = { lyGrid: "grid", lyQp: "qp", lyMv: "mv", lyIntra: "intra",
+                lyRef: "ref", lyTu: "tu", lySao: "sao" };
     Object.keys(map).forEach(function (id) {
       $(id).addEventListener("change", function () {
         st.layers[map[id]] = this.checked; drawOverlay();

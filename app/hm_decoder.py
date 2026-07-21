@@ -18,6 +18,8 @@ from . import config, project
 
 TRACE_NAME = "TraceDec.txt"
 CU_DUMP_NAME = "cu_dump.csv"
+TU_DUMP_NAME = "tu_dump.csv"
+SAO_DUMP_NAME = "sao_dump.csv"
 HM_STDOUT_NAME = "hm_stdout.txt"
 DEC_YUV_NAME = "hm_decoded.yuv"
 

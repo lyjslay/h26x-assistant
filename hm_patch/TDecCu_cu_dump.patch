@@ -1,8 +1,8 @@
 diff --git a/source/Lib/TLibDecoder/TDecCu.cpp b/source/Lib/TLibDecoder/TDecCu.cpp
-index be1f6305..ebcc00be 100644
+index be1f6305..fe41d9ed 100644
 --- a/source/Lib/TLibDecoder/TDecCu.cpp
 +++ b/source/Lib/TLibDecoder/TDecCu.cpp
-@@ -42,6 +42,52 @@
+@@ -42,6 +42,129 @@
  //! \ingroup TLibDecoder
  //! \{
  
@@ -50,17 +50,106 @@ index be1f6305..ebcc00be 100644
 +  if( poc != g_hmCuDumpLastPoc ) { g_hmCuDumpLastPoc = poc; }
 +  fflush( g_hmCuDump );
 +}
++
++// ==== TU/RQT dump: 逐叶子变换单元(TU)矩形 → tu_dump.csv ====
++//   poc,x,y,size,cu_x,cu_y,cu_size
++static FILE* g_hmTuDump = NULL;
++
++static Void hmTuDumpRecurse( TComDataCU* pcCU, UInt uiAbsPartIdx, UInt uiTrDepth,
++                             UInt cuX, UInt cuY, UInt cuSize )
++{
++  const UInt trIdx = pcCU->getTransformIdx( uiAbsPartIdx );
++  const UInt tuSize = cuSize >> uiTrDepth;
++  if( uiTrDepth < trIdx && tuSize > 4 )
++  {
++    const UInt qNum = ( pcCU->getPic()->getNumPartitionsInCtu() >>
++                        ( ( pcCU->getDepth( uiAbsPartIdx ) + uiTrDepth ) << 1 ) ) >> 2;
++    for( UInt i = 0; i < 4; i++ )
++    {
++      const UInt sub = uiAbsPartIdx + i * qNum;
++      const UInt sx = cuX + ( ( i & 1 ) ? ( tuSize >> 1 ) : 0 );
++      const UInt sy = cuY + ( ( i & 2 ) ? ( tuSize >> 1 ) : 0 );
++      hmTuDumpRecurse( pcCU, sub, uiTrDepth + 1, sx, sy, cuSize );
++    }
++    return;
++  }
++  const Int poc = pcCU->getSlice()->getPOC();
++  fprintf( g_hmTuDump, "%d,%d,%d,%d,%d,%d,%d\n",
++           poc, (Int)cuX, (Int)cuY, (Int)tuSize,
++           (Int)cuX, (Int)cuY, (Int)cuSize );
++}
++
++Void hmTuDumpLeaf( TComDataCU* pcCU, UInt uiAbsPartIdx, UInt uiDepth )
++{
++  if( g_hmTuDump == NULL )
++  {
++    g_hmTuDump = fopen( "tu_dump.csv", "w" );
++    if( g_hmTuDump == NULL ) return;
++    fprintf( g_hmTuDump, "poc,x,y,size,cu_x,cu_y,cu_size\n" );
++  }
++  const UInt maxCuW = pcCU->getSlice()->getSPS()->getMaxCUWidth();
++  const UInt cuSize = maxCuW >> uiDepth;
++  const UInt cuX = pcCU->getCUPelX() + g_auiRasterToPelX[ g_auiZscanToRaster[uiAbsPartIdx] ];
++  const UInt cuY = pcCU->getCUPelY() + g_auiRasterToPelY[ g_auiZscanToRaster[uiAbsPartIdx] ];
++  hmTuDumpRecurse( pcCU, uiAbsPartIdx, 0, cuX, cuY, cuSize );
++  fflush( g_hmTuDump );
++}
++
++// ==== SAO dump: 逐 CTU 各分量 SAO 参数 → sao_dump.csv ====
++//   poc,ctu,x,y,size,comp(0Y/1Cb/2Cr),mode(0off/1new/2merge),typeIdc,typeAux
++static FILE* g_hmSaoDump = NULL;
++
++Void hmSaoDumpCtu( TComDataCU* pCtu )
++{
++  const TComSlice* pcSlice = pCtu->getSlice();
++  if( !pcSlice->getSPS()->getUseSAO() ) return;
++  if( g_hmSaoDump == NULL )
++  {
++    g_hmSaoDump = fopen( "sao_dump.csv", "w" );
++    if( g_hmSaoDump == NULL ) return;
++    fprintf( g_hmSaoDump, "poc,ctu,x,y,size,comp,mode,typeIdc,typeAux\n" );
++  }
++  const Int poc = pcSlice->getPOC();
++  const Int ctu = (Int)pCtu->getCtuRsAddr();
++  const UInt sz = pCtu->getSlice()->getSPS()->getMaxCUWidth();
++  const Int x = (Int)pCtu->getCUPelX();
++  const Int y = (Int)pCtu->getCUPelY();
++  SAOBlkParam* all = pCtu->getPic()->getPicSym()->getSAOBlkParam();
++  if( all == NULL ) return;
++  SAOBlkParam& p = all[ ctu ];
++  const Int nComp = pCtu->getPic()->getNumberValidComponents();
++  for( Int c = 0; c < nComp && c < 3; c++ )
++  {
++    const SAOOffset& o = p[c];
++    fprintf( g_hmSaoDump, "%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
++             poc, ctu, x, y, (Int)sz, c,
++             (Int)o.modeIdc, (Int)o.typeIdc, (Int)o.typeAuxInfo );
++  }
++  fflush( g_hmSaoDump );
++}
 +#endif
 +
  // ====================================================================================================================
  // Constructor / destructor / create / destroy
  // ====================================================================================================================
-@@ -337,6 +383,10 @@ Void TDecCu::xFinishDecodeCU( TComDataCU* pcCU, UInt uiAbsPartIdx, UInt uiDepth,
+@@ -146,6 +269,10 @@ Void TDecCu::decodeCtu( TComDataCU* pCtu, Bool& isLastCtuOfSliceSegment )
+ 
+   // start from the top level CU
+   xDecodeCU( pCtu, 0, 0, isLastCtuOfSliceSegment);
++
++#if HM_CU_DUMP
++  hmSaoDumpCtu( pCtu );
++#endif
+ }
+ 
+ /** 
+@@ -337,6 +464,11 @@ Void TDecCu::xFinishDecodeCU( TComDataCU* pcCU, UInt uiAbsPartIdx, UInt uiDepth,
      pcCU->setChromaQpAdjSubParts( pcCU->getCodedChromaQpAdj(), uiAbsPartIdx, uiDepth ); // set QP
    }
  
 +#if HM_CU_DUMP
 +  hmCuDumpLeaf( pcCU, uiAbsPartIdx, uiDepth );
++  hmTuDumpLeaf( pcCU, uiAbsPartIdx, uiDepth );
 +#endif
 +
    isLastCtuOfSliceSegment = xDecodeSliceEnd( pcCU, uiAbsPartIdx );

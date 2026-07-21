@@ -150,6 +150,20 @@
 - HEVC 帧图像仍用 ffmpeg 从裸流按显示序抽(preview.py framemap 已支持 hevc 分支，按 IDR 分段+POC 排序)。
 - **已验证**：小流(6帧)+真实 1440p(282帧,22 IDR) 全链路;PU 拼满 CU 零间隙;两 codec 所有端点 200;QP/参考列表对齐 HM 日志。
 
+## 6f. 后续增强 (2026-07-21): 后台解码进度 + HEVC TU/SAO
+
+**后台解码 + 进度**：
+- `app/jobs.py` — `start_decode()` 后台线程跑解码，`_stream_run` 逐行读解码器 stdout，命中帧模式(JM `^\d+\( X \)` / HM `^POC n TId`)则 +1 进度。`get_status()` 返回 `{state(idle/pending/running/done/error),done,total,message,error}`。总帧数用 `ffprobe -count_packets`。每工程一把 `project.get_decode_lock` 串行化，防重复解码。已解码则 `_already_decoded` 直接 done。
+- `app/main.py` — `POST /decode`(启动/复用) + `GET /decode/status`(轮询)。
+- 前端 `app.js` `window.App.ensureDecoded(pid, onProgress)`(启动+轮询,done resolve) + `progressText`；③④⑤页进入前先 ensureDecoded 显示进度。**坑**：JM 帧计数行数可能比 ffprobe 包数略少(done 48/total 50)，无碍,以 state=done 为准。
+
+**HEVC TU/RQT + SAO 叠加**：
+- HM 补丁(`TDecCu_cu_dump.patch` 已更新，157行)新增两处 dump：`hmTuDumpLeaf`(递归 RQT 叶子 TU 矩形→`tu_dump.csv`: poc,x,y,size,cu_x,cu_y,cu_size；用 `getTransformIdx` 判 TU 深度,tuSize>4 才递归) + `hmSaoDumpCtu`(在 `decodeCtu` 末尾，每 CTU 各分量 SAO→`sao_dump.csv`: poc,ctu,x,y,size,comp,mode,typeIdc,typeAux；经 `getPicSym()->getSAOBlkParam()[ctu][comp]`)。**重编译**：只 TDecCu.r.o 变，`make -C lib/TLibDecoderAnalyser release` + app 链接即可(makefile 宏已在)。
+- `app/hm_cu.py` — `rows_for_decode_index`(通用按 POC 变化切段，同 CU 分段坑) 供 TU/SAO。
+- `app/hevc_overlay.py` — overlay 加 `tu`(矩形列表) + `sao`(逐 CTU 聚合，取亮度 comp=0 主类型；`_sao_kind`: mode 0off/1new/2merge，new typeIdc 0-3=EO 各角度/4=BO)。
+- 前端 `preview.js` — 加 `drawTuLayer`(红虚线网格) `drawSaoLayer`(SAO 类型着色)；`lyTu/lySao` 复选框(`.hevc-only` 仅 HEVC 显示)；SAO 图例；legend 按 codec 过滤块类型(HEVC 只列 `*_cu`)。
+- **验证**：TU 527/帧、SAO 8 CTU 分类正确；H.264 overlay 无 tu/sao 键(前端 return 容错)；两 codec 全端点 200。
+
 ## 7. 待办 / 下一步
 - [x] **五项需求 H.264 + H.265 全部完成(P1-P5)**。
 - [ ] 后续可选增强：H.264 MV 精确重建(mvd→MV 预测)；HEVC TU/RQT 叠加层、SAO/去块可视化；HEVC 原始数据若要 CU 级需再给 HM 打字节位置补丁；多 slice/Tile/WPP 更细处理；性能(1440p 解码~98s，可加进度反馈/后台任务)。

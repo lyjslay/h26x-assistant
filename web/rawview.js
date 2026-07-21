@@ -34,6 +34,11 @@
     $("rwNeedProj").hidden = true; $("rwMain").hidden = false;
     setMsg("正在准备解码与语法解析…");
     try {
+      if (global.App && global.App.ensureDecoded) {
+        await global.App.ensureDecoded(st.pid, function (s) {
+          setMsg(global.App.progressText(s) || "解码中…");
+        });
+      }
       // 借用 framemap 得到帧总数(解码序)
       var fm = await apiJSON("/api/project/" + st.pid + "/framemap");
       st.numFrames = fm.num_frames;

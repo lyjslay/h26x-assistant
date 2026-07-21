@@ -10,8 +10,8 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
-from . import (bitrate, config, hevc_overlay, hevc_rawmap, hevc_syntax, overlay,
-               preview, project, rawmap, syntax)
+from . import (bitrate, config, hevc_overlay, hevc_rawmap, hevc_syntax, jobs,
+               overlay, preview, project, rawmap, syntax)
 from .decoder import DecodeError
 from .hm_decoder import HMDecodeError
 
@@ -128,6 +128,23 @@ def api_bitrate(project_id: str):
         raise HTTPException(status_code=404, detail=str(e))
     except (RuntimeError, OSError) as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ---------------- 后台解码 + 进度 ----------------
+@app.post("/api/project/{project_id}/decode")
+def api_start_decode(project_id: str):
+    """启动(或复用)后台解码任务，立即返回状态。前端据此轮询进度。"""
+    try:
+        project.get_project(project_id)  # 校验存在
+        return jobs.start_decode(project_id)
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@app.get("/api/project/{project_id}/decode/status")
+def api_decode_status(project_id: str):
+    """查询解码进度 {state, done, total, message, error}。"""
+    return jobs.get_status(project_id)
 
 
 # ---------------- 语法解析 (P2 H.264 / P5 HEVC) ----------------

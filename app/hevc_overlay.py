@@ -108,6 +108,13 @@ def build_frame_overlay(project_id: str, decode_index: int, cfg=None) -> Dict[st
             "partitions": parts,
         })
 
+    # TU/RQT 网格 + SAO 分类(额外叠加层)
+    proj_dir = project.Project(project_id).dir
+    tus = hm_cu.rows_for_decode_index(proj_dir / hm_decoder.TU_DUMP_NAME, decode_index)
+    tu_rects = [{"x": t["x"], "y": t["y"], "w": t["size"], "h": t["size"]} for t in tus]
+    sao_rows = hm_cu.rows_for_decode_index(proj_dir / hm_decoder.SAO_DUMP_NAME, decode_index)
+    sao_ctus = _build_sao(sao_rows)
+
     return {
         "decode_index": decode_index, "poc": poc,
         "slice_type": fr["slice_type"],
@@ -120,7 +127,46 @@ def build_frame_overlay(project_id: str, decode_index: int, cfg=None) -> Dict[st
         "qp_range": [qp_min if blocks else fr["qp"], qp_max if blocks else fr["qp"]],
         "num_blocks": len(blocks),
         "blocks": blocks,
+        "tu": tu_rects,
+        "sao": sao_ctus,
     }
+
+
+# SAO 类型: modeIdc 0=off 1=new 2=merge; new 的 typeIdc: 0/1/2/3=EO(0/90/135/45°), 4=BO
+SAO_TYPE_LABEL = {
+    "off": "关闭", "eo0": "边缘 0°", "eo90": "边缘 90°",
+    "eo135": "边缘 135°", "eo45": "边缘 45°", "bo": "带偏移 BO", "merge": "合并",
+}
+
+
+def _sao_kind(mode: int, type_idc: int) -> str:
+    if mode == 0:
+        return "off"
+    if mode == 2:
+        return "merge"
+    # mode==1 (new)
+    return {0: "eo0", 1: "eo90", 2: "eo135", 3: "eo45", 4: "bo"}.get(type_idc, "off")
+
+
+def _build_sao(rows: List[Dict]) -> List[Dict]:
+    """把逐分量 SAO 行按 CTU 聚合，取亮度(comp=0)作为主类型。"""
+    by_ctu: Dict[int, Dict] = {}
+    for r in rows:
+        ctu = r["ctu"]
+        d = by_ctu.setdefault(ctu, {
+            "ctu": ctu, "x": r["x"], "y": r["y"], "size": r["size"],
+            "luma": None, "cb": None, "cr": None,
+        })
+        comp = {0: "luma", 1: "cb", 2: "cr"}.get(r["comp"])
+        if comp:
+            d[comp] = {"mode": r["mode"], "typeIdc": r["typeIdc"],
+                       "kind": _sao_kind(r["mode"], r["typeIdc"])}
+    out = []
+    for ctu in sorted(by_ctu):
+        d = by_ctu[ctu]
+        d["kind"] = d["luma"]["kind"] if d["luma"] else "off"
+        out.append(d)
+    return out
 
 
 def build_reference_graph(project_id: str, cfg=None) -> Dict[str, object]:

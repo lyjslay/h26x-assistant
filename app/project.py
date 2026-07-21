@@ -7,6 +7,7 @@ import json
 import os
 import shutil
 import subprocess
+import threading
 import uuid
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -14,6 +15,19 @@ from typing import Dict, List, Optional
 from . import config
 
 WORKDIR = Path(__file__).resolve().parents[1] / "workdir"
+
+# 每工程一把解码锁：保证同一工程的解码不并发(避免重复解码/竞争 trace 文件)。
+_DECODE_LOCKS: Dict[str, threading.Lock] = {}
+_LOCKS_GUARD = threading.Lock()
+
+
+def get_decode_lock(project_id: str) -> threading.Lock:
+    with _LOCKS_GUARD:
+        lk = _DECODE_LOCKS.get(project_id)
+        if lk is None:
+            lk = threading.Lock()
+            _DECODE_LOCKS[project_id] = lk
+        return lk
 
 # 裸码流扩展名 -> codec
 RAW_EXT = {
